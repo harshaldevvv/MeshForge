@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+dist/
+build/
+*.spec
+.env
+# user data / generated output
+jobs/
+output/
+*.blend1
