@@ -2,7 +2,15 @@
 
 Open-source Windows app that turns a text description or a set of photos into a textured 3D model.
 
-**Status: research and design phase.** See [`docs/`](docs/) for the research and architecture as it lands.
+**Status: research done, engine in progress.**
+
+- [Architecture and build plan](docs/ARCHITECTURE.md)
+- Research: [models and papers](docs/research/01-sota-models.md), [competitors and APIs](docs/research/02-competitors-and-apis.md), [Blender and desktop stack](docs/research/03-blender-and-stack.md)
+- Working now: [`blender/pipeline.py`](blender/pipeline.py), which takes any GLB through cleanup, decimation to a target, UV unwrap, a high-to-low bake (albedo, normal, roughness, AO) and export to GLB, FBX, OBJ, USDZ, STL and PLY. Requires Blender 5.x:
+
+```
+blender -b --factory-startup -P blender/pipeline.py -- in.glb out/ 5000
+```
 
 ## Planned pipeline
 
