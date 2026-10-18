@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeshForge</title>
+<style>
+  :root {
+    --bg: #111317; --panel: #181b21; --panel2: #1f232b; --line: #2a2f39; --text: #e6e8ec; --dim: #9aa1ad;
+    --accent: #6ea8fe; --accent2: #3d6fd1; --ok: #4cc38a; --warn: #f0b429; --bad: #f2555a; --r: 10px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button:hover { border-color: #3a4150; }
+  button.primary { background: var(--accent2); border-color: var(--accent2); color: #fff; font-weight: 600; }
+  button.primary:hover { background: #4a7de0; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.on { background: #26324a; border-color: var(--accent); color: #cfe0ff; }
+  input, select, textarea { background: #0f1115; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%; }
+  textarea { resize: vertical; min-height: 110px; }
+  label { display: block; color: var(--dim); font-size: 12px; margin: 12px 0 5px; text-transform: uppercase; letter-spacing: .04em; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .app { display: grid; grid-template-columns: 340px 1fr; height: 100%; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); padding: 16px; overflow-y: auto; display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; margin-bottom: 14px; }
+  .brand svg { width: 26px; height: 26px; }
+  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: #0f1115; padding: 4px; border-radius: 9px; }
+  .tabs button { border: 0; background: transparent; padding: 6px 0; font-size: 13px; }
+  .tabs button.on { background: var(--panel2); color: var(--text); }
+  .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+  .seg button { flex: 1; padding: 6px 4px; font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .check { display: flex; gap: 8px; align-items: center; color: var(--text); text-transform: none; letter-spacing: 0; font-size: 14px; margin: 10px 0 0; }
+  .check input { width: auto; }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { background: #0f1115; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 12px; color: var(--dim); }
+  .spacer { flex: 1; min-height: 16px; }
+  .foot { display: grid; gap: 8px; }
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .top { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+  .top h2 { margin: 0; font-size: 16px; }
+  .top .dim { color: var(--dim); font-size: 13px; }
+  .split { flex: 1; display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 1.6fr); min-height: 0; }
+  .split.noview { grid-template-columns: 1fr; }
+  .grid { overflow-y: auto; padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; align-content: start; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; cursor: pointer; text-align: left; padding: 0; }
+  .card.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .card .img { aspect-ratio: 1; background: #0c0e12 center/contain no-repeat; position: relative; }
+  .card .img .noimg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); font-size: 12px; padding: 12px; text-align: center; }
+  .card .meta { padding: 9px 11px; }
+  .card .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); margin-top: 3px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .s-done .dot { background: var(--ok); } .s-failed .dot { background: var(--bad); }
+  .s-busy .dot { background: var(--warn); animation: pulse 1.1s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .steps { display: flex; gap: 3px; margin-top: 7px; }
+  .steps i { flex: 1; height: 3px; border-radius: 2px; background: var(--line); }
+  .steps i.d { background: var(--ok); } .steps i.a { background: var(--warn); }
+  .empty { grid-column: 1/-1; color: var(--dim); text-align: center; padding: 60px 20px; border: 1px dashed var(--line); border-radius: var(--r); }
+  .viewer { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .vbar { display: flex; flex-wrap: wrap; gap: 5px; padding: 10px 12px; border-bottom: 1px solid var(--line); align-items: center; }
+  .vbar button { padding: 5px 10px; font-size: 13px; }
+  .vbar .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
+  .stage { position: relative; flex: 1; min-height: 260px; background: radial-gradient(ellipse at 50% 40%, #232833, #0d0f13); }
+  .stage canvas { display: block; width: 100%; height: 100%; }
+  .stats { position: absolute; left: 12px; top: 10px; font-size: 12px; color: var(--dim); background: #0d0f13cc; padding: 5px 9px; border-radius: 7px; pointer-events: none; }
+  .overlay { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); text-align: center; padding: 20px; }
+  .vpanel { border-top: 1px solid var(--line); padding: 12px; overflow-y: auto; max-height: 42%; display: grid; gap: 12px; }
+  .maps { display: flex; gap: 8px; overflow-x: auto; }
+  .map { flex: 0 0 auto; width: 84px; text-align: center; font-size: 11px; color: var(--dim); cursor: pointer; background: none; border: 0; padding: 0; }
+  .map img { width: 84px; height: 84px; object-fit: cover; border-radius: 7px; border: 1px solid var(--line); background: #0c0e12; display: block; margin-bottom: 3px; }
+  .tweak { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: 8px; align-items: end; }
+  .tweak label { margin-top: 0; }
+  .files { display: flex; flex-wrap: wrap; gap: 6px; }
+  .files a { font-size: 12px; color: var(--accent); text-decoration: none; background: #0f1115; border: 1px solid var(--line); padding: 3px 8px; border-radius: 6px; }
+  .err { color: #ffb3b5; background: #3a1a1c; border: 1px solid #5c2629; padding: 8px 10px; border-radius: 8px; font-size: 13px; white-space: pre-wrap; }
+  pre.log { margin: 0; font-size: 11.5px; color: var(--dim); max-height: 90px; overflow: auto; white-space: pre-wrap; }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 0; width: min(640px, 92vw); }
+  dialog::backdrop { background: #0009; }
+  .dlg-h { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .dlg-h h3 { margin: 0; font-size: 16px; }
+  .dlg-b { padding: 6px 18px 18px; max-height: 70vh; overflow-y: auto; }
+  .key { border-bottom: 1px solid var(--line); padding: 12px 0; }
+  .key:last-child { border: 0; }
+  .key .kh { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #2a2f39; color: var(--dim); font-weight: 500; }
+  .badge.ok { background: #173a2b; color: #8fe0b6; }
+  .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #26324a; border: 1px solid var(--accent); padding: 9px 16px; border-radius: 9px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  @media (max-width: 1100px) { .split { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } .grid { max-height: 260px; } .viewer { border-left: 0; border-top: 1px solid var(--line); } }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand">
+      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 3 28 10v12L16 29 4 22V10z" stroke="#6ea8fe" stroke-width="2"/><path d="M4 10l12 7 12-7M16 17v12" stroke="#6ea8fe" stroke-width="2"/></svg>
+      MeshForge
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button data-tab="text" class="on">Describe</button>
+      <button data-tab="images">Images</button>
+      <button data-tab="folder">Folder</button>
+      <button data-tab="list">List</button>
+    </div>
+
+    <div data-pane="text">
+      <label for="prompt">What should we make?</label>
+      <textarea id="prompt" placeholder="A weathered bronze knight helmet with a tall red horsehair plume, engraved floral patterns on the cheek guards, dents and scratches from battle…"></textarea>
+      <div class="hint">More detail = better model: materials, colors, shape, style, wear.</div>
+      <label>Views to generate</label>
+      <div class="seg" id="views">
+        <button data-v="front" class="on">Front</button><button data-v="back">Back</button>
+        <button data-v="left">Left</button><button data-v="right">Right</button>
+      </div>
+      <div class="hint">One front view works best with TRELLIS.2. Pick 3–4 views with a multi-view backend.</div>
+      <label for="imgprov">Image generator</label>
+      <select id="imgprov"></select>
+    </div>
+
+    <div data-pane="images" hidden>
+      <label>Images of one object</label>
+      <button id="pickImgs" style="width:100%">Choose images…</button>
+      <input id="imgPaths" placeholder="…or paste image paths, separated by ;" style="margin-top:6px">
+      <div class="chips" id="imgChips"></div>
+      <div class="hint">Name files like <b>chair_front.png</b>, <b>chair_back.png</b>, <b>chair_left.png</b> so views are detected.</div>
+    </div>
+
+    <div data-pane="folder" hidden>
+      <label>Batch folder</label>
+      <button id="pickFolder" style="width:100%">Choose folder…</button>
+      <input id="folderPath" placeholder="…or paste a folder path" style="margin-top:6px">
+      <div class="hint">A folder of folders (one object each), or a flat folder of images named <b>object_view.png</b>.</div>
+    </div>
+
+    <div data-pane="list" hidden>
+      <label>Description list</label>
+      <button id="pickList" style="width:100%">Choose .txt or .csv…</button>
+      <input id="listPath" placeholder="…or paste a file path" style="margin-top:6px">
+      <div class="hint">.txt: one description per line. .csv: name, description, preset.</div>
+    </div>
+
+    <label for="name">Name (optional)</label>
+    <input id="name" placeholder="auto from description or file names">
+
+    <label for="backend">3D backend</label>
+    <select id="backend"></select>
+    <div class="hint" id="backendHint"></div>
+
+    <label>Detail</label>
+    <div class="seg" id="preset"></div>
+    <div class="hint" id="presetHint"></div>
+    <label class="check"><input type="checkbox" id="quads"> Quad topology</label>
+
+    <button class="primary" id="go" style="margin-top:16px; padding:10px">Generate</button>
+    <div class="err" id="formErr" hidden style="margin-top:10px"></div>
+
+    <div class="spacer"></div>
+    <div class="foot">
+      <button id="keysBtn">API keys</button>
+      <button id="exportBtn">Export all…</button>
+      <button id="openOut">Open output folder</button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="top">
+      <h2>Models</h2><span class="dim" id="summary"></span>
+    </div>
+    <div class="split noview" id="split">
+      <div class="grid" id="grid"></div>
+      <section class="viewer" id="viewer" hidden>
+        <div class="vbar" id="vbar">
+          <button data-ch="lit" class="on">Lit</button>
+          <button data-ch="albedo">Albedo</button>
+          <button data-ch="normal">Normal map</button>
+          <button data-ch="roughness">Roughness</button>
+          <button data-ch="ao">AO</button>
+          <button data-ch="clay">Clay</button>
+          <button data-ch="uv">UV checker</button>
+          <span class="sep"></span>
+          <button id="wire">Wireframe</button>
+          <button id="spin">Turntable</button>
+          <button id="raw">Raw model</button>
+        </div>
+        <div class="stage" id="stage"><div class="stats" id="stats"></div><div class="overlay" id="vmsg"></div></div>
+        <div class="vpanel" id="vpanel"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<dialog id="keys">
+  <div class="dlg-h"><h3>API keys</h3><button id="keysClose" aria-label="Close">✕</button></div>
+  <div class="dlg-b">
+    <p class="hint">Keys are stored in Windows Credential Manager on this computer only. Free options are marked.</p>
+    <div id="keyList"></div>
+  </div>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from './vendor/addons/GLTFLoader.js';
+import { OrbitControls } from './vendor/addons/OrbitControls.js';
+import { RoomEnvironment } from './vendor/addons/RoomEnvironment.js';
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const api = async (name, body = {}) => {
+  const r = await fetch('/api/' + name, { method: 'POST', headers: { 'X-MeshForge': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+};
+const toast = msg => { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const BACKEND_INFO = {
+  'hf-trellis2': 'Free (Hugging Face quota). One image, best open quality, PBR.',
+  'hf-hunyuan-mv': 'Free (HF quota). Uses front/back/left/right views. License excludes EU/UK/KR.',
+  'fal-trellis2': 'Paid via fal (~$0.25–0.35). One image, no daily limit.',
+  'fal-trellis-multi': 'Paid via fal (~$0.02). Several views.',
+  'fal-hunyuan-mv': 'Paid via fal (~$0.16). Needs front, back and left.',
+};
+const KEY_LINKS = { cloudflare: 'https://dash.cloudflare.com/profile/api-tokens', pollinations: 'https://enter.pollinations.ai/keys',
+  hf: 'https://huggingface.co/settings/tokens', fal: 'https://fal.ai/dashboard/keys' };
+const FREE = { cloudflare: true, pollinations: true, hf: true };
+
+let S = null, tab = 'text', preset = 'game', picked = [], selected = null, shownVersion = null;
+
+// ---------- form ----------
+$$('.tabs button').forEach(b => b.onclick = () => {
+  tab = b.dataset.tab;
+  $$('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+  $$('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== tab);
+});
+$$('#views button').forEach(b => b.onclick = () => { b.classList.toggle('on'); if (!$$('#views .on').length) b.classList.add('on'); });
+$('#backend').onchange = () => $('#backendHint').textContent = BACKEND_INFO[$('#backend').value] || '';
+const renderChips = () => $('#imgChips').innerHTML = picked.map(p => `<span class="chip">${esc(p.split(/[\\/]/).pop())}</span>`).join('');
+$('#pickImgs').onclick = async () => { picked = await api('pick_images'); renderChips(); };
+$('#imgPaths').oninput = e => { picked = e.target.value.split(';').map(s => s.trim()).filter(Boolean); renderChips(); };
+$('#pickFolder').onclick = async () => { const f = await api('pick_folder'); if (f) $('#folderPath').value = f; };
+$('#pickList').onclick = async () => { const f = await api('pick_list'); if (f) $('#listPath').value = f; };
+
+$('#go').onclick = async () => {
+  const opts = { backend: $('#backend').value, preset, quads: $('#quads').checked, image_provider: $('#imgprov').value,
+                 views: $$('#views .on').map(b => b.dataset.v), name: $('#name').value.trim() || undefined };
+  if (tab === 'text') opts.prompt = $('#prompt').value;
+  if (tab === 'images') opts.images = picked;
+  if (tab === 'folder') opts.folder = $('#folderPath').value.trim();
+  if (tab === 'list') opts.list = $('#listPath').value.trim();
+  const err = $('#formErr'); err.hidden = true;
+  $('#go').disabled = true;
+  try {
+    const r = await api('submit', { opts });
+    if (r.error) { err.textContent = r.error; err.hidden = false; return; }
+    toast(`Started ${r.started.length} job${r.started.length > 1 ? 's' : ''}`);
+    selected = r.started[0];
+    await refresh();
+  } catch (e) { err.textContent = e.message; err.hidden = false; }
+  finally { $('#go').disabled = false; }
+};
+
+// ---------- keys ----------
+function renderKeys() {
+  $('#keyList').innerHTML = Object.entries(S.key_help).map(([n, h]) => `
+    <div class="key">
+      <div class="kh"><span>${n}${FREE[n] ? ' <span class="badge">free tier</span>' : ''}</span>
+        <span class="badge ${S.keys[n] ? 'ok' : ''}">${S.keys[n] ? 'saved' : 'not set'}</span></div>
+      <div class="hint">${esc(h)}</div>
+      <div class="row" style="margin-top:8px">
+        <input type="password" data-key="${n}" placeholder="Paste ${n} key${n === 'cloudflare' ? ' as ACCOUNT_ID:TOKEN' : ''}" autocomplete="off">
+        <button data-save="${n}">Save</button>
+        <button data-link="${n}">Get key ↗</button>
+      </div>
+    </div>`).join('');
+}
+$('#keysBtn').onclick = () => { renderKeys(); $('#keys').showModal(); };
+$('#keysClose').onclick = () => $('#keys').close();
+$('#keyList').onclick = async e => {
+  const save = e.target.dataset.save, link = e.target.dataset.link;
+  if (link) api('open_url', { url: KEY_LINKS[link] });
+  if (save) {
+    const inp = $(`input[data-key="${save}"]`);
+    if (await api('set_key', { name: save, value: inp.value })) { inp.value = ''; toast(`${save} key saved`); await refresh(); renderKeys(); }
+  }
+};
+$('#exportBtn').onclick = async () => { const p = await api('export', { formats: [] }); if (p) toast('Exported to ' + p); };
+$('#openOut').onclick = () => api('open_folder', { name: '' });
+
+// ---------- cards ----------
+const ORDER = ['queued', 'images', 'reconstructing', 'refining', 'done'];
+const LABEL = { queued: 'Queued', images: 'Generating images', reconstructing: 'Building 3D', refining: 'Refining in Blender', done: 'Ready', failed: 'Failed' };
+function card(j) {
+  const busy = !['done', 'failed'].includes(j.status);
+  const idx = ORDER.indexOf(j.status);
+  const steps = j.status === 'failed' ? '' : `<div class="steps">${ORDER.slice(1).map((s, i) =>
+      `<i class="${i + 1 < idx || j.status === 'done' ? 'd' : i + 1 === idx ? 'a' : ''}"></i>`).join('')}</div>`;
+  const img = j.thumb ? `style="background-image:url('${j.thumb}')"` : '';
+  return `<button class="card ${j.name === selected ? 'sel' : ''}" data-name="${esc(j.name)}">
+    <div class="img" ${img}>${j.thumb ? '' : `<div class="noimg">${esc((j.prompt || '').slice(0, 90))}</div>`}</div>
+    <div class="meta"><div class="name" title="${esc(j.name)}">${esc(j.name)}</div>
+      <div class="status ${busy ? 's-busy' : 's-' + j.status}"><span class="dot"></span>${LABEL[j.status] || j.status}</div>${steps}</div>
+  </button>`;
+}
+$('#grid').onclick = e => { const c = e.target.closest('.card'); if (c) { selected = c.dataset.name; render(); } };
+
+function render() {
+  const jobs = S.jobs;
+  const busy = jobs.filter(j => !['done', 'failed'].includes(j.status)).length;
+  $('#summary').textContent = `${jobs.length} model${jobs.length === 1 ? '' : 's'}${busy ? ` · ${busy} in progress` : ''}`;
+  $('#grid').innerHTML = jobs.length ? jobs.map(card).join('') :
+    '<div class="empty">No models yet. Describe something on the left, or add images or a folder, then press Generate.</div>';
+  const j = jobs.find(x => x.name === selected);
+  $('#viewer').hidden = !j;
+  $('#split').classList.toggle('noview', !j);
+  if (j) renderDetail(j);
+}
+
+// ---------- detail panel ----------
+function renderDetail(j) {
+  const files = j.files || [];
+  const base = `/files/${encodeURIComponent(j.name)}/final/`;
+  const maps = files.filter(f => f.endsWith('.png'));
+  const models = files.filter(f => /^model\./.test(f) && !f.endsWith('.mtl'));
+  const p = S.presets[j.preset || 'game'] || S.presets.game;
+  const html = `
+    ${j.error ? `<div class="err">${esc(j.error)}</div>` : ''}
+    ${j.prompt ? `<div class="hint" style="margin:0">“${esc(j.prompt)}”</div>` : ''}
+    ${maps.length ? `<div><label style="margin-top:0">Texture maps</label><div class="maps">${maps.map(m =>
+        `<button class="map" data-map="${m}"><img src="${base}${m}?v=${j.version}" alt="${m}">${m.replace('.png', '')}</button>`).join('')}</div></div>` : ''}
+    <div class="tweak">
+      <div><label>Detail</label><select id="tPreset">${Object.keys(S.presets).map(k => `<option ${k === (j.preset || 'game') ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
+      <div><label>Triangles</label><input id="tTarget" type="number" min="0" step="500" placeholder="${p.target || 'all'}" value="${j.target ?? ''}"></div>
+      <div><label>Texture px</label><select id="tTex">${[512, 1024, 2048, 4096, 8192].map(t => `<option ${t === (j.texture || p.texture) ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+      <div><label class="check" style="margin:0 0 8px"><input type="checkbox" id="tQuads" ${j.quads ? 'checked' : ''}> Quads</label></div>
+      <button id="tApply" ${j.status !== 'done' && j.status !== 'failed' ? 'disabled' : ''}>Apply</button>
+    </div>
+    <div class="row" style="flex-wrap:wrap">
+      <button id="regen" ${['done', 'failed'].includes(j.status) ? '' : 'disabled'}>Regenerate (new seed)</button>
+      ${j.prompt && j.image_provider ? `<button id="regenImg" ${['done', 'failed'].includes(j.status) ? '' : 'disabled'}>New images + regenerate</button>` : ''}
+      <button id="openJob">Open folder</button>
+    </div>
+    ${models.length ? `<div><label style="margin-top:0">Download</label><div class="files">${models.map(m =>
+        `<a href="${base}${m}" download="${esc(j.name)}_${m}">${m.split('.').pop().toUpperCase()}</a>`).join('')}${maps.map(m =>
+        `<a href="${base}${m}" download="${esc(j.name)}_${m}">${m}</a>`).join('')}</div></div>` : ''}
+    ${j.log?.length ? `<pre class="log">${esc(j.log.join('\n'))}</pre>` : ''}`;
+  const key = j.name + '|' + j.status + '|' + j.version + '|' + (j.log?.length || 0) + '|' + (j.error || '');
+  if ($('#vpanel').dataset.key !== key) {
+    $('#vpanel').dataset.key = key;
+    $('#vpanel').innerHTML = html;
+    wireDetail(j);
+  }
+  const want = files.includes('model.glb') ? j.name + '@' + j.version : null;
+  if (want !== shownVersion) { shownVersion = want; want ? loadModel(j) : clearModel(j); }
+}
+function wireDetail(j) {
+  const busyMsg = () => toast('Working…');
+  $('#tApply') && ($('#tApply').onclick = async () => {
+    const t = $('#tTarget').value;
+    await api('refine', { name: j.name, opts: { preset: $('#tPreset').value, target: t === '' ? null : Number(t),
+      texture: Number($('#tTex').value), quads: $('#tQuads').checked } });
+    busyMsg(); refresh();
+  });
+  $('#regen') && ($('#regen').onclick = async () => { await api('regenerate', { name: j.name, opts: {} }); busyMsg(); refresh(); });
+  $('#regenImg') && ($('#regenImg').onclick = async () => { await api('regenerate', { name: j.name, opts: { new_images: true } }); busyMsg(); refresh(); });
+  $('#openJob').onclick = () => api('open_folder', { name: j.name });
+  $$('.map').forEach(m => m.onclick = () => setChannel({ 'diffuse.png': 'albedo', 'normal.png': 'normal', 'roughness.png': 'roughness', 'ao.png': 'ao' }[m.dataset.map] || 'lit'));
+}
+
+// ---------- 3D viewer ----------
+const stage = $('#stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(3, 5, 4); scene.add(sun);
+const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+const grid = new THREE.GridHelper(10, 20, 0x3a4150, 0x262b34); scene.add(grid);
+const loader = new GLTFLoader(), texLoader = new THREE.TextureLoader();
+let model = null, meshes = [], originals = new Map(), mapTex = {}, channel = 'lit', wire = false, spin = false, showRaw = false;
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+renderer.setAnimationLoop(() => {
+  if (spin && model) model.rotation.y += 0.006;
+  controls.update(); renderer.render(scene, camera);
+});
+
+const checker = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    g.fillStyle = (x + y) % 2 ? '#e8e8e8' : `hsl(${(x * 22 + y * 9) % 360} 65% 55%)`; g.fillRect(x * 32, y * 32, 32, 32);
+  }
+  const t = new THREE.CanvasTexture(c); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+})();
+
+function clearModel(j) {
+  if (model) scene.remove(model);
+  model = null; meshes = []; $('#stats').textContent = '';
+  const msg = { failed: 'Generation failed. See the error below.', done: 'No model file.' }[j?.status] || `${LABEL[j?.status] || 'Working'}…<br><span style="font-size:12px">The model appears here when ready.</span>`;
+  $('#vmsg').innerHTML = msg; $('#vmsg').hidden = false;
+}
+
+function loadModel(j) {
+  const base = `/files/${encodeURIComponent(j.name)}/`;
+  const url = showRaw ? base + 'raw.glb' : base + 'final/model.glb';
+  $('#vmsg').innerHTML = 'Loading…'; $('#vmsg').hidden = false;
+  loader.load(url + '?v=' + j.version, gltf => {
+    if (model) scene.remove(model);
+    model = gltf.scene; meshes = []; originals = new Map();
+    let tris = 0, verts = 0;
+    model.traverse(o => { if (o.isMesh) {
+      meshes.push(o); originals.set(o, o.material);
+      const g = o.geometry; verts += g.attributes.position.count; tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+    } });
+    // center on the grid and frame
+    const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
+    model.position.sub(new THREE.Vector3(ctr.x, box.min.y, ctr.z));
+    const r = size.length() / 2 || 1;
+    grid.scale.setScalar(r / 2.5);
+    camera.position.set(r * 1.5, r * 1.1, r * 2.1); controls.target.set(0, size.y / 2, 0);
+    camera.near = r / 100; camera.far = r * 100; camera.updateProjectionMatrix();
+    scene.add(model);
+    // baked maps for channel inspection (exact PNGs Blender wrote)
+    mapTex = {};
+    const want = { albedo: 'diffuse.png', normal: 'normal.png', roughness: 'roughness.png', ao: 'ao.png' };
+    for (const [k, f] of Object.entries(want)) if (!showRaw && (j.files || []).includes(f)) {
+      const t = texLoader.load(`${base}final/${f}?v=${j.version}`); t.flipY = false;
+      t.colorSpace = k === 'albedo' ? THREE.SRGBColorSpace : THREE.NoColorSpace; mapTex[k] = t;
+    }
+    if (mapTex.ao) meshes.forEach(m => { const o = originals.get(m); if (o.isMeshStandardMaterial) { o.aoMap = mapTex.ao; o.needsUpdate = true; } });
+    $('#stats').textContent = `${showRaw ? 'RAW · ' : ''}${Math.round(tris).toLocaleString()} triangles · ${verts.toLocaleString()} vertices`;
+    $('#vmsg').hidden = true;
+    applyChannel();
+  }, undefined, () => { $('#vmsg').innerHTML = 'Could not load the model.'; });
+}
+
+function applyChannel() {
+  for (const m of meshes) {
+    const o = originals.get(m);
+    const basic = map => new THREE.MeshBasicMaterial({ map: map || null, color: map ? 0xffffff : 0x666666 });
+    const mat = {
+      lit: () => o,
+      albedo: () => basic(mapTex.albedo || o.map),
+      normal: () => basic(mapTex.normal),
+      roughness: () => basic(mapTex.roughness),
+      ao: () => basic(mapTex.ao),
+      clay: () => new THREE.MeshStandardMaterial({ color: 0xb9b2a8, roughness: 0.75 }),
+      uv: () => basic(checker),
+    }[channel]();
+    m.material = mat;
+    // wireframe = dark lines over whatever channel is shown
+    if (wire && !m.userData.wire) {
+      m.userData.wire = new THREE.LineSegments(new THREE.WireframeGeometry(m.geometry),
+        new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 }));
+      m.add(m.userData.wire);
+    }
+    if (m.userData.wire) m.userData.wire.visible = wire;
+  }
+  $$('#vbar [data-ch]').forEach(b => b.classList.toggle('on', b.dataset.ch === channel));
+}
+function setChannel(c) { channel = c; applyChannel(); }
+$$('#vbar [data-ch]').forEach(b => b.onclick = () => setChannel(b.dataset.ch));
+$('#wire').onclick = e => { wire = !wire; e.target.classList.toggle('on', wire); applyChannel(); };
+$('#spin').onclick = e => { spin = !spin; e.target.classList.toggle('on', spin); };
+$('#raw').onclick = e => { showRaw = !showRaw; e.target.classList.toggle('on', showRaw); shownVersion = null; render(); };
+
+// ---------- boot ----------
+async function refresh() {
+  S = await api('state');
+  if (!$('#backend').options.length) {
+    $('#backend').innerHTML = S.backends.map(b => `<option>${b}</option>`).join(''); $('#backend').onchange();
+    $('#imgprov').innerHTML = S.image_providers.map(b => `<option>${b}</option>`).join('');
+    $('#preset').innerHTML = Object.keys(S.presets).map(k => `<button data-p="${k}" class="${k === preset ? 'on' : ''}">${k}</button>`).join('');
+    const ph = () => { const p = S.presets[preset]; $('#presetHint').textContent = `${p.target ? p.target.toLocaleString() + ' triangles' : 'keep every triangle'} · ${p.texture}px textures`; };
+    $$('#preset button').forEach(b => b.onclick = () => { preset = b.dataset.p; $$('#preset button').forEach(x => x.classList.toggle('on', x === b)); ph(); });
+    ph();
+    if (!selected && S.jobs.length) selected = S.jobs[0].name;
+  }
+  render();
+}
+refresh();
+setInterval(() => refresh().catch(() => {}), 1500);
+</script>
+</body>
+</html>

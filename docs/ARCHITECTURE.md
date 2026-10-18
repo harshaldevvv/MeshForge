@@ -83,7 +83,7 @@ Every model card has:
 
 | Layer | Choice | Why |
 |---|---|---|
-| Shell | **Tauri 2** (NSIS installer, ~10 MB) | Small, native WebView2, built-in sidecar support |
+| Shell | **pywebview** (Edge WebView2) now; Tauri 2 optional later | No Rust toolchain needed; the UI is plain HTML/JS served over a localhost JSON API, so it ports to Tauri unchanged |
 | UI | React + Vite + three.js | Viewer with channel isolation (albedo, normal, roughness and so on), wireframe, UV checker |
 | Engine | Python sidecar: FastAPI + asyncio job queue + SQLite | ML and HTTP clients live in Python; spawns Blender |
 | 3D processing | Blender 5.x headless (detected, not bundled) | Verified pipeline; avoids GPL bundling |

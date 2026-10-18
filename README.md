@@ -2,7 +2,7 @@
 
 Open-source Windows app that turns a text description or a set of photos into textured, game-ready 3D models, from 500-triangle low poly to million-triangle meshes, exported in every common format with PBR texture maps.
 
-**Status:** phase 1 (engine and command-line tool) works. The desktop UI is next. See the [architecture and build plan](docs/ARCHITECTURE.md).
+**Status:** phase 1 (engine and CLI) and phase 2 (desktop app) work. Next: deeper iteration tools, more backends and maps, then a signed installer. See the [architecture and build plan](docs/ARCHITECTURE.md).
 
 ## How it works
 
@@ -43,7 +43,32 @@ Keys are stored in Windows Credential Manager. Environment variables `MESHFORGE_
 | `pollinations` | Text → image | Free grant | [enter.pollinations.ai/keys](https://enter.pollinations.ai/keys) |
 | `fal` | Paid 3D backends (no daily limit) | ~$0.02–0.35 per model | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) |
 
-## Use
+## Desktop app
+
+```
+meshforge ui
+```
+
+**Generating:** describe an object, or add images, a batch folder or a description list. Then pick a backend and detail level and press **Generate**. Jobs run in parallel, and each card shows its stage live.
+
+**Each model card opens a 3D viewer** where you can orbit and zoom. It shows:
+- **Lit:** full PBR shading.
+- **Albedo, Normal map, Roughness, AO:** the exact baked maps, one at a time.
+- **Clay:** shape only, no texture.
+- **UV checker:** shows texture stretching and seams.
+- **Wireframe** overlay, **Turntable** rotation, and **Raw model** (the untouched AI output, for comparison).
+- Triangle and vertex counts.
+
+**Per model you can also:**
+- **Apply** a new detail level, triangle target, texture size or quad topology. This re-runs only Blender and takes seconds, with no API cost.
+- **Regenerate** with a new seed, or with new images for text jobs.
+- **Download** any format or map.
+
+**API keys** opens a panel where you paste keys; pasting works there. **Export all** writes one zip of every model.
+
+Models are saved to `Documents\MeshForge` (change it with `MESHFORGE_OUTPUT`). `meshforge ui --browser` serves the same UI to any browser, minus the native file pickers.
+
+## Command line
 
 ```
 meshforge run "a weathered bronze knight helmet with a red plume"     # text → model

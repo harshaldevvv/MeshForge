@@ -55,7 +55,8 @@ def refine(job_dir: Path, preset="game", target=None, texture=None, quads=False,
     return final
 
 
-def run_job(job: Job, out_root: Path, image_provider: str, backend: str, preset: str, view_names, seed, quads, log):
+def run_job(job: Job, out_root: Path, image_provider: str, backend: str, preset: str, view_names, seed, quads, log,
+            stage=lambda s: None):
     d = out_root / job.name
     (d / "views").mkdir(parents=True, exist_ok=True)
     preset = job.preset or preset
@@ -64,9 +65,11 @@ def run_job(job: Job, out_root: Path, image_provider: str, backend: str, preset:
     views = {}
     for v, src in job.views.items():
         dst = d / "views" / f"{v}{Path(src).suffix.lower()}"
-        shutil.copy(src, dst)
+        if Path(src).resolve() != dst.resolve():  # regenerate passes the job's own views
+            shutil.copy(src, dst)
         views[v] = dst
     if job.prompt and not views:
+        stage("images")
         gen = providers.IMAGE_PROVIDERS[image_provider]
         for v in view_names:
             log(f"  [{job.name}] generating {v} view ({image_provider})")
@@ -74,9 +77,11 @@ def run_job(job: Job, out_root: Path, image_provider: str, backend: str, preset:
             gen(providers.view_prompt(job.prompt, v), dst, seed)
             views[v] = dst
 
+    stage("reconstructing")
     log(f"  [{job.name}] reconstructing from {sorted(views)} ({backend})")
     providers.RECONSTRUCTORS[backend](views, d / "raw.glb", PRESETS[preset] | {"seed": seed})
 
+    stage("refining")
     log(f"  [{job.name}] refining in Blender (preset {preset})")
     refine(d, preset, quads=quads, log=log)
 

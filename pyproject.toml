@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Text or images to textured 3D models: AI reconstruction + Blender pipeline"
 requires-python = ">=3.10"
 license = "MIT"
-dependencies = ["gradio_client>=1.0", "httpx", "keyring"]
+dependencies = ["gradio_client>=1.0", "httpx", "keyring", "pywebview>=5"]
 
 [project.scripts]
 meshforge = "meshforge.__main__:main"

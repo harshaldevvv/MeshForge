@@ -34,6 +34,10 @@ def main(argv=None):
     e.add_argument("--zip", default="meshforge_export.zip")
     e.add_argument("--formats", help="e.g. glb,fbx (default: all). Texture maps are always included.")
 
+    u = sub.add_parser("ui", help="open the desktop app")
+    u.add_argument("--browser", action="store_true", help="serve the UI without a window (open the printed URL)")
+    u.add_argument("--port", type=int, default=0)
+
     k = sub.add_parser("key", help="store API keys in Windows Credential Manager")
     k.add_argument("action", choices=["set", "list"])
     k.add_argument("name", nargs="?", choices=list(providers.KEY_HELP))
@@ -54,6 +58,9 @@ def main(argv=None):
     if a.cmd == "export":
         fm = set(a.formats.split(",")) if a.formats else None
         print(engine.export_zip(Path(a.output), Path(a.zip), fm).resolve())
+    if a.cmd == "ui":
+        from . import app
+        app.main(a.port, window=not a.browser)
     if a.cmd == "key":
         if a.action == "list":
             for n, h in providers.KEY_HELP.items():
