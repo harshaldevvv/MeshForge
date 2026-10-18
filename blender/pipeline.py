@@ -1,12 +1,14 @@
 # Headless post-processing: cleanup -> decimate to target -> UV -> bake hi->lo -> multi-format export.
-# Usage: blender -b --factory-startup -P blender/pipeline.py -- in.glb outdir 5000
+# Usage: blender -b --factory-startup -P blender/pipeline.py -- in.glb outdir <target_tris|0=keep> [texture_px] [quads 0|1]
 # Verified on Blender 5.2.2 LTS.
 import bpy, sys, os
 
 
 def main():
-    src, out, target = sys.argv[sys.argv.index("--") + 1:][:3]
-    target = int(target)
+    args = sys.argv[sys.argv.index("--") + 1:]
+    src, out, target = os.path.abspath(args[0]), os.path.abspath(args[1]), int(args[2])  # relative paths break bake save + FBX embed
+    res = int(args[3]) if len(args) > 3 else 2048
+    quads = len(args) > 4 and args[4] == "1"
     os.makedirs(out, exist_ok=True)
     bpy.ops.wm.read_factory_settings(use_empty=True)
     sc = bpy.context.scene
@@ -61,12 +63,32 @@ def main():
     bpy.ops.object.select_all(action='DESELECT')
     lo.select_set(True)
     bpy.context.view_layer.objects.active = lo
-    tris = sum(len(f.vertices) - 2 for f in lo.data.polygons)
-    m = lo.modifiers.new("dec", 'DECIMATE')
-    m.decimate_type = 'COLLAPSE'
-    m.ratio = min(1.0, target / tris)
-    m.use_collapse_triangulate = True
-    bpy.ops.object.modifier_apply(modifier="dec")
+    count = lambda: sum(len(f.vertices) - 2 for f in lo.data.polygons)
+    tris = count()
+
+    def decimate(to):
+        if to and to < count():
+            m = lo.modifiers.new("dec", 'DECIMATE')
+            m.decimate_type = 'COLLAPSE'
+            m.ratio = to / count()
+            m.use_collapse_triangulate = True
+            bpy.ops.object.modifier_apply(modifier="dec")
+
+    if quads:
+        goal = target or tris
+        lo.data.remesh_voxel_size = diag / 300  # watertight, closes holes in AI triangle soup
+        bpy.ops.object.voxel_remesh()
+        # QuadriFlow rejects many voxel meshes (non-manifold vertices); fall back to decimate + join tris
+        if 'FINISHED' not in bpy.ops.object.quadriflow_remesh(mode='FACES', target_faces=max(100, goal // 2), seed=0):
+            decimate(goal)
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.mesh.tris_convert_to_quads()
+            bpy.ops.object.mode_set(mode='OBJECT')
+    else:
+        decimate(target)
+    quad_n = sum(1 for f in lo.data.polygons if len(f.vertices) == 4)
+    print(f"MESHFORGE_TRIS: {tris} -> {count()} ({quad_n} quads)")
 
     # UVs
     for uv in list(lo.data.uv_layers):
@@ -85,7 +107,7 @@ def main():
     nt = mat.node_tree
     bsdf = nt.nodes["Principled BSDF"]
 
-    def bake(kind, cs, res=2048, **kw):
+    def bake(kind, cs, **kw):
         img = bpy.data.images.new(kind.lower(), res, res)
         img.colorspace_settings.name = cs
         n = nt.nodes.new("ShaderNodeTexImage")

@@ -1,0 +1,17 @@
+[project]
+name = "meshforge"
+version = "0.1.0"
+description = "Text or images to textured 3D models: AI reconstruction + Blender pipeline"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = ["gradio_client>=1.0", "httpx", "keyring"]
+
+[project.scripts]
+meshforge = "meshforge.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["meshforge"]
