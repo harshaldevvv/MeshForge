@@ -62,8 +62,27 @@ def main(argv=None):
             if not a.name:
                 sys.exit("meshforge key set <name>")
             print(providers.KEY_HELP[a.name])
-            providers.set_key(a.name, getpass.getpass(f"{a.name} key (hidden): ").strip())
+            value = _ask_key(a.name)
+            if not value:
+                sys.exit("nothing entered, key not changed")
+            providers.set_key(a.name, value)
             print("saved")
+
+
+def _ask_key(name):
+    """Masked pop-up (paste works there, unlike hidden console input); console prompt if no GUI."""
+    try:
+        import tkinter as tk
+        from tkinter import simpledialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        v = simpledialog.askstring("MeshForge", f"Paste your {name} key (Ctrl+V):\n\n{providers.KEY_HELP[name]}",
+                                   show="*", parent=root)
+        root.destroy()
+        return (v or "").strip()
+    except Exception:
+        return getpass.getpass(f"{name} key (hidden): ").strip()
 
 
 if __name__ == "__main__":
