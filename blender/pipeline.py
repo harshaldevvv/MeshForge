@@ -44,6 +44,12 @@ def main():
     hi = bpy.context.object
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     diag = max(hi.dimensions.length, 1e-6)
+    if not any(s.material for s in hi.material_slots):  # shape-only models (Hunyuan3D) come without a material
+        clay = bpy.data.materials.new("clay")
+        clay.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.8, 0.8, 0.8, 1)
+        clay.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.0
+        hi.data.materials.clear()
+        hi.data.materials.append(clay)
 
     # cleanup
     bpy.ops.object.mode_set(mode='EDIT')

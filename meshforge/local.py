@@ -28,6 +28,7 @@ MODELS = HOME / "models"
 OLLAMA = "http://127.0.0.1:11434"
 ROOT = Path(__file__).resolve().parent.parent
 NOWIN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+TRANSFORMERS_PIN = "transformers==4.48.3"  # shared torch venv: TripoSR + Hunyuan3D both need 4.x (5.x breaks checkpoints)
 
 # kind: llm (writes Blender code) | llm-mesh (writes mesh text) | image | 3d (image -> 3D)
 # vram: GB for comfortable GPU use; cpu: also usable without a GPU (slower); ram: GB system memory needed
@@ -77,6 +78,10 @@ CATALOG = [
                "-W", "768", "-H", "768"]),
     dict(id="triposr", kind="3d", name="TripoSR", size=5.2, vram=6, ram=8, cpu=True, tier=2, license="MIT",
          note="Image → textured mesh in seconds on GPU, ~1–3 min on CPU. Rough detail. Includes PyTorch (~3.5 GB)."),
+    dict(id="hunyuan3d-2mv", kind="3d", name="Hunyuan3D-2mv multi-view (shape)", size=8.2, vram=6, ram=16, cpu=False,
+         tier=4, multiview=True, license="Tencent Community: NOT licensed in the EU, UK or South Korea",
+         note="Uses front/left/back/right images: crisp, accurate shapes (no texture; Blender bakes the colour). "
+              "Runs on 4 GB GPUs using shared memory, ~4-6 min."),
     dict(id="hunyuan3d-2mini", kind="3d", name="Hunyuan3D-2mini (shape)", size=7.8, vram=6, ram=16, cpu=False, tier=3,
          license="Tencent Community: NOT licensed in the EU, UK or South Korea",
          note="Better shapes than TripoSR, no texture (Blender bakes a flat colour). Includes PyTorch."),
@@ -116,7 +121,8 @@ def fit(m, hw):
         return "good"
     if m["kind"] in ("llm", "llm-mesh") and hw["ram"] >= m["size"] + 4:  # Ollama spills layers to RAM
         return "slow"
-    if m["cpu"] or (m["kind"] == "image" and hw["vram"] >= 3):
+    if m["cpu"] or (m["kind"] == "image" and hw["vram"] >= 3) or (m["kind"] == "3d" and hw["vram"] >= 4 and hw["ram"] >= 14):
+        # 3d: NVIDIA drivers spill into system RAM, verified for Hunyuan3D-2mv on a 4 GB GPU
         return "slow"
     return "no"
 
@@ -304,7 +310,7 @@ def _patch_triposr(src: Path):
 
 def _install_triposr(mid, hw):
     py = _ensure_torch(mid, hw)
-    _pip(py, mid, "omegaconf", "einops", "transformers==4.44.2", "trimesh", "rembg[cpu]", "huggingface-hub",
+    _pip(py, mid, "omegaconf", "einops", TRANSFORMERS_PIN, "trimesh", "rembg[cpu]", "huggingface-hub",
          "PyMCubes", "Pillow", "xatlas", "moderngl", "imageio")
     src = HOME / "triposr"
     if not (src / "tsr").exists():
@@ -321,12 +327,20 @@ def _install_triposr(mid, hw):
                    check=True, capture_output=True, creationflags=NOWIN)
 
 
+HUNYUAN_FILES = {
+    "hunyuan3d-2mini": ("tencent/Hunyuan3D-2mini", ["hunyuan3d-dit-v2-mini-turbo/*", "hunyuan3d-vae-v2-mini-turbo/*"]),
+    "hunyuan3d-2mv": ("tencent/Hunyuan3D-2mv", ["hunyuan3d-dit-v2-mv-turbo/config.yaml",
+                                              "hunyuan3d-dit-v2-mv-turbo/model.fp16.safetensors"]),
+}
+
+
 def _install_hunyuan(mid, hw):
     py = _ensure_torch(mid, hw)
-    _pip(py, mid, "hy3dgen==2.0.2", "rembg[cpu]")
-    _set(mid, msg="Downloading Hunyuan3D-2mini weights (4.3 GB)")
-    r = subprocess.run([str(py), "-c", "from huggingface_hub import snapshot_download as s;"
-                        "s('tencent/Hunyuan3D-2mini', allow_patterns=['hunyuan3d-dit-v2-mini-turbo/*','hunyuan3d-vae-v2-mini-turbo/*'])"],
+    # hy3dgen alone pulls transformers 5.x (renames DINOv2 weights) and diffusers 0.41 (needs huggingface_hub 1.x)
+    _pip(py, mid, "hy3dgen==2.0.2", "rembg[cpu]", TRANSFORMERS_PIN, "diffusers==0.34.0")
+    repo, patterns = HUNYUAN_FILES[mid]
+    _set(mid, msg=f"Downloading {BY_ID[mid]['name']} weights (~{BY_ID[mid]['size'] - 3.5:.1f} GB)")
+    r = subprocess.run([str(py), "-c", f"from huggingface_hub import snapshot_download as s; s({repo!r}, allow_patterns={patterns!r})"],
                        capture_output=True, text=True, creationflags=NOWIN)
     if r.returncode:
         raise RuntimeError(r.stderr[-500:])
@@ -645,7 +659,8 @@ def _torch_3d(mid):
         if not py or not installed()[mid]:
             raise RuntimeError(f"{BY_ID[mid]['name']} is not downloaded. Open Local models and download it.")
         img = views.get("front") or next(iter(views.values()))
-        r = subprocess.run([str(py), str(ROOT / "meshforge" / "torch_runner.py"), mid, str(img), str(out), str(HOME)],
+        extra = [f"{v}={p}" for v, p in views.items()]
+        r = subprocess.run([str(py), str(ROOT / "meshforge" / "torch_runner.py"), mid, str(img), str(out), str(HOME), *extra],
                            capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=NOWIN)
         if r.returncode or not out.exists():
             raise RuntimeError(f"{BY_ID[mid]['name']} failed: {(r.stderr or r.stdout)[-600:]}")
@@ -671,7 +686,8 @@ for _m in CATALOG:
                                           note=_m["note"], **_paid)
     else:
         providers.RECONSTRUCTORS[_pid] = _torch_3d(_m["id"])
-        providers.RECON_INFO[_pid] = dict(label=f"{_m['name']} · local", key=None, views="1", note=_m["note"], **_paid)
+        providers.RECON_INFO[_pid] = dict(label=f"{_m['name']} · local", key=None, views="1-4" if _m.get("multiview") else "1",
+                                          note=_m["note"], **_paid)
 
 
 if __name__ == "__main__":  # self-check: python -m meshforge.local

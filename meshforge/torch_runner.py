@@ -9,6 +9,7 @@ import torch
 from PIL import Image
 
 mid, img_path, out, home = sys.argv[1], sys.argv[2], sys.argv[3], Path(sys.argv[4])
+VIEWS = dict(a.split("=", 1) for a in sys.argv[5:])  # extra views: front=... left=... back=... right=...
 device = "cuda" if torch.cuda.is_available() else "cpu"
 T0 = time.time()
 log = lambda m: print(f"[{time.time() - T0:6.1f}s] {m}", file=sys.stderr, flush=True)
@@ -128,6 +129,22 @@ if mid == "triposr":
     log("mesh + texture done")
     from tsr.utils import to_gradio_3d_orientation  # TripoSR's own fix: its native axes are not glTF Y-up
     to_gradio_3d_orientation(tm).export(out)
+
+elif mid == "hunyuan3d-2mv":
+    from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
+
+    imgs = {v: cutout(VIEWS[v]) for v in ("front", "left", "back", "right") if v in VIEWS} or {"front": cutout(img_path)}
+    log(f"views: {list(imgs)}")
+    # 4.7 GB fp16; on 4 GB GPUs the NVIDIA driver spills into system RAM (slower, but works: peak ~5 GB, verified)
+    pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+        "tencent/Hunyuan3D-2mv", subfolder="hunyuan3d-dit-v2-mv-turbo", variant="fp16", use_safetensors=True, device=device)
+    if hasattr(pipe, "enable_flashvdm"):
+        pipe.enable_flashvdm()
+    log("model loaded")
+    mesh = pipe(image=imgs, num_inference_steps=5, octree_resolution=320, num_chunks=4000,
+                generator=torch.manual_seed(1234), output_type="trimesh")[0]
+    log(f"generated {len(mesh.faces)} faces")
+    mesh.export(out)
 
 elif mid == "hunyuan3d-2mini":
     from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
