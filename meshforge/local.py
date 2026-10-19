@@ -21,7 +21,7 @@ from pathlib import Path
 
 import httpx
 
-from . import providers
+from . import parametric, providers
 
 HOME = Path(os.environ.get("MESHFORGE_HOME", Path(os.environ.get("LOCALAPPDATA", Path.home())) / "MeshForge"))
 MODELS = HOME / "models"
@@ -195,6 +195,7 @@ def installed():
             out[m["id"]] = bool(sd_cli()) and all((MODELS / Path(f).name).exists() for _, f in m["files"].values())
         else:
             out[m["id"]] = (HOME / "ready" / m["id"]).exists()
+    out["instant"] = True
     return out
 
 
@@ -483,13 +484,13 @@ def _extract_code(text: str) -> str:
     return "\n".join(keep).strip()
 
 
-def _chat(model, messages, seed):
+def _chat(model, messages, seed, fmt=None):
     r = httpx.post(f"{OLLAMA}/api/chat", timeout=httpx.Timeout(30, read=900), json={
-        "model": model, "messages": messages, "stream": False, "think": False,
+        "model": model, "messages": messages, "stream": False, "think": False, **({"format": fmt} if fmt else {}),
         "options": {"temperature": 0.4, "seed": seed % 2**31, "num_ctx": 8192, "num_predict": 1500}})
     if r.is_error:  # older models reject "think"
         r = httpx.post(f"{OLLAMA}/api/chat", timeout=httpx.Timeout(30, read=900), json={
-            "model": model, "messages": messages, "stream": False,
+            "model": model, "messages": messages, "stream": False, **({"format": fmt} if fmt else {}),
             "options": {"temperature": 0.4, "seed": seed % 2**31, "num_ctx": 8192, "num_predict": 1500}})
     r.raise_for_status()
     return r.json()["message"]["content"]
@@ -505,45 +506,122 @@ def _run_in_blender(code_file: Path, out: Path):
         raise RuntimeError(err[-800:] or "Blender produced no model")
 
 
+TEMPLATE_SYSTEM = """You turn a description of an object into settings for a parametric 3D generator.
+Available templates:
+{catalog}
+
+Reply with JSON only: {{"template": "<name or none>", "params": {{...}}}}
+- Pick the template that matches the object. If nothing fits, use "none".
+- Fill the params that the description implies (sizes in metres, realistic proportions; colours as [r, g, b] 0-1).
+  Leave out params the description does not mention."""
+
+
+def _pick_template(mid, prompt, seed, prev=None, edit=None):
+    """LLM chooses template + params. Keyword hit -> only that template's schema (shorter, more reliable)."""
+    hint = parametric.match(prompt) if not prev else prev[0]
+    names = [hint] if hint else list(parametric.TEMPLATES)
+    cat = "\n".join(l for l in parametric.catalog_text().splitlines() if l.split(":")[0][2:] in names)
+    msgs = [{"role": "system", "content": TEMPLATE_SYSTEM.format(catalog=cat)},
+            {"role": "user", "content": "Describe: a small dark wooden crate with 5 planks"},
+            {"role": "assistant", "content": '{"template": "crate", "params": {"width": 0.45, "depth": 0.45, '
+                                            '"height": 0.45, "planks": 5, "wood": [0.24, 0.13, 0.06]}}'}]
+    if prev and edit:
+        msgs += [{"role": "user", "content": f"Describe: {prompt}"},
+                 {"role": "assistant", "content": json.dumps({"template": prev[0], "params": prev[1]})},
+                 {"role": "user", "content": f"Change it: {edit}. Reply with the full updated JSON."}]
+    else:
+        msgs.append({"role": "user", "content": f"Describe: {prompt}"})
+    try:
+        data = json.loads(_chat(mid, msgs, seed, fmt="json"))
+        name = str(data.get("template", "none")).lower()
+        if name in parametric.TEMPLATES:
+            base = prev[1] if prev else parametric.defaults(name)
+            return name, parametric.validate(name, {**base, **(data.get("params") or {})})
+        return None
+    except (ValueError, httpx.HTTPError, AttributeError):
+        if hint:  # LLM answer unusable: fall back to the word parser
+            return hint, parametric.apply_words(hint, prev[1] if prev else parametric.defaults(hint), edit or prompt)
+        return None
+
+
+def _build_template(job_dir, name, params, out):
+    (job_dir / "template.json").write_text(json.dumps({"template": name, "params": params}, indent=1))
+    code_file = job_dir / "model_script.py"
+    code_file.write_text(parametric.script(name, params), encoding="utf-8")
+    _run_in_blender(code_file, out)
+
+
+def _saved_template(job_dir):
+    f = job_dir / "template.json"
+    if f.exists():
+        d = json.loads(f.read_text())
+        return d["template"], d["params"]
+
+
+def _freeform(mid, prompt, job_dir, out, opts):
+    code_file = job_dir / "model_script.py"
+    msgs = [{"role": "system", "content": SYSTEM},
+            {"role": "user", "content": "Make: a wooden desk with a drawer"}, {"role": "assistant", "content": EXAMPLE}]
+    if opts.get("edit") and code_file.exists():  # iterate on the previous script
+        msgs += [{"role": "user", "content": f"Make: {prompt}"},
+                 {"role": "assistant", "content": f"```python\n{code_file.read_text(encoding='utf-8')}\n```"},
+                 {"role": "user", "content": f"Change it: {opts['edit']}. Output the full updated script."}]
+    else:
+        msgs.append({"role": "user", "content": f"Make: {prompt}"})
+    last = None
+    for attempt in range(3):  # generate -> check -> run; feed errors back for a repair
+        code = _extract_code(_chat(mid, msgs, opts.get("seed", 0) + attempt))
+        try:
+            check_script(code)
+            code_file.write_text(code, encoding="utf-8")
+            _run_in_blender(code_file, out)
+            return
+        except (ValueError, SyntaxError, RuntimeError) as e:
+            last = e
+            msgs += [{"role": "assistant", "content": f"```python\n{code}\n```"},
+                     {"role": "user", "content": f"That failed: {str(e)[:600]}\nFix it and output the full script."}]
+    raise RuntimeError(f"The local model could not produce a working script after 3 tries: {last}")
+
+
 def _llm_blender(mid):
+    """Template first (reliable proportions), free-form Blender code only when no template fits."""
     def rec(views, out, opts):
         prompt, job_dir = opts.get("prompt", "").strip(), Path(opts["job_dir"])
         if not prompt:
             raise RuntimeError("This backend builds from a text description. Add a description.")
+        ensure_ollama()  # start the server first, or the installed-check sees nothing
         if not installed()[mid]:
             raise RuntimeError(f"{BY_ID[mid]['name']} is not downloaded. Open Local models and download it.")
-        ensure_ollama()
-        code_file = job_dir / "model_script.py"
-        msgs = [{"role": "system", "content": SYSTEM},
-                {"role": "user", "content": "Make: a wooden desk with a drawer"}, {"role": "assistant", "content": EXAMPLE}]
-        if opts.get("edit") and code_file.exists():  # iterate on the previous script
-            msgs += [{"role": "user", "content": f"Make: {prompt}"},
-                     {"role": "assistant", "content": f"```python\n{code_file.read_text(encoding='utf-8')}\n```"},
-                     {"role": "user", "content": f"Change it: {opts['edit']}. Output the full updated script."}]
-        else:
-            msgs.append({"role": "user", "content": f"Make: {prompt}"})
-        last = None
-        for attempt in range(3):  # generate -> check -> run; feed errors back for a repair
-            code = _extract_code(_chat(mid, msgs, opts.get("seed", 0) + attempt))
-            try:
-                check_script(code)
-                code_file.write_text(code, encoding="utf-8")
-                _run_in_blender(code_file, out)
-                return
-            except (ValueError, SyntaxError, RuntimeError) as e:
-                last = e
-                msgs += [{"role": "assistant", "content": f"```python\n{code}\n```"},
-                         {"role": "user", "content": f"That failed: {str(e)[:600]}\nFix it and output the full script."}]
-        raise RuntimeError(f"The local model could not produce a working script after 3 tries: {last}")
+        edit, prev = opts.get("edit"), _saved_template(job_dir)
+        if edit and not prev and (job_dir / "model_script.py").exists():
+            return _freeform(mid, prompt, job_dir, out, opts)
+        pick = _pick_template(mid, prompt, opts.get("seed", 0), prev, edit)
+        if pick:
+            return _build_template(job_dir, *pick, out)
+        (job_dir / "template.json").unlink(missing_ok=True)
+        _freeform(mid, prompt, job_dir, out, opts)
     return rec
+
+
+def rec_instant(views, out, opts):
+    """No AI at all: keyword match + word parser ("tall red chest with 3 bands, no lock")."""
+    prompt, job_dir = opts.get("prompt", "").strip(), Path(opts["job_dir"])
+    prev = _saved_template(job_dir)
+    if opts.get("edit") and prev:
+        return _build_template(job_dir, prev[0], parametric.apply_words(prev[0], prev[1], opts["edit"]), out)
+    name = parametric.match(prompt)
+    if not name:
+        raise RuntimeError("No template matches this description. Templates: " + ", ".join(parametric.TEMPLATES)
+                           + ". For anything else use a local LLM or an online backend.")
+    _build_template(job_dir, name, parametric.apply_words(name, parametric.defaults(name), prompt), out)
 
 
 def _llm_mesh(mid):
     def rec(views, out, opts):
         prompt, job_dir = opts.get("prompt", "").strip(), Path(opts["job_dir"])
+        ensure_ollama()
         if not installed()[mid]:
             raise RuntimeError("LLaMA-Mesh is not downloaded. Open Local models and download it.")
-        ensure_ollama()
         text = _chat(mid, [{"role": "user", "content": f"Create a 3D model of {prompt}."}], opts.get("seed", 0))
         v = [tuple(map(float, l.split()[1:4])) for l in text.splitlines() if re.match(r"^v\s", l)]
         f = [tuple(int(x.split("/")[0]) - 1 for x in l.split()[1:]) for l in text.splitlines() if re.match(r"^f\s", l)]
@@ -575,6 +653,12 @@ def _torch_3d(mid):
 
 
 # ---------- register ----------
+
+providers.RECONSTRUCTORS["local-templates"] = rec_instant
+providers.RECON_INFO["local-templates"] = dict(
+    label="Templates · instant (no AI needed)", key=None, views="text", input="text", local="instant", free=True,
+    note=f"{len(parametric.TEMPLATES)} built-in generators ({', '.join(list(parametric.TEMPLATES)[:8])}…). "
+         "Understands colours, sizes, counts and styles from your words. Works on any PC.")
 
 for _m in CATALOG:
     _pid, _paid = "local-" + _m["id"].split("/")[-1].replace(":", "-"), dict(local=_m["id"], free=True)

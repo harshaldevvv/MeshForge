@@ -85,10 +85,18 @@ class Api:
         for name, j in jobs.items():
             d = OUT / name
             front = sorted((d / "views").glob("front.*")) or sorted((d / "views").glob("*.*"))
-            j["thumb"] = f"/files/{name}/views/{front[0].name}" if front else None
+            prev = d / "final" / "preview.png"
+            j["thumb"] = (f"/files/{name}/final/preview.png?v={int(prev.stat().st_mtime)}" if prev.exists() else
+                          f"/files/{name}/views/{front[0].name}" if front else None)
             final = d / "final"
             j["files"] = sorted(f.name for f in final.iterdir()) if final.exists() else []
             j["version"] = int(final.stat().st_mtime) if final.exists() else 0
+            tf = d / "template.json"
+            if tf.exists():
+                try:
+                    j["template"] = json.loads(tf.read_text())
+                except ValueError:
+                    pass
         return {
             "jobs": sorted(jobs.values(), key=lambda j: -j.get("updated", j.get("started", 0))),
             "keys": {n: bool(providers.get_key(n, required=False)) for n in providers.KEYS},

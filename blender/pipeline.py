@@ -178,6 +178,25 @@ def main():
     bpy.ops.wm.stl_export(filepath=P("stl"), export_selected_objects=True)
     bpy.ops.wm.ply_export(filepath=P("ply"), export_selected_objects=True)
 
+    # small preview for the model card (fast workbench render with the baked texture)
+    import mathutils
+    pts = [lo.matrix_world @ mathutils.Vector(c) for c in lo.bound_box]
+    ctr = sum(pts, mathutils.Vector()) / 8
+    r = max((p - ctr).length for p in pts)
+    bpy.ops.object.camera_add(location=ctr + mathutils.Vector((0.55, -1, 0.45)).normalized() * r * 2.7)
+    cam = bpy.context.object
+    cam.rotation_euler = (ctr - cam.location).to_track_quat('-Z', 'Y').to_euler()
+    sc.camera = cam
+    nt.nodes.active = next(n for n in nt.nodes if n.type == 'TEX_IMAGE' and n.image and n.image.name == "diffuse")
+    sc.render.engine = 'BLENDER_WORKBENCH'
+    sc.display.shading.color_type = 'TEXTURE'
+    sc.display.shading.light = 'STUDIO'
+    sc.render.film_transparent = True
+    sc.render.resolution_x = sc.render.resolution_y = 384
+    sc.render.image_settings.file_format = 'PNG'
+    sc.render.filepath = os.path.join(out, "preview.png")
+    bpy.ops.render.render(write_still=True)
+
 
 try:
     main()

@@ -38,7 +38,8 @@ python -m venv .venv
 
 Open **Local models** in the app. It detects your GPU, VRAM, RAM and disk, then marks each model as **Recommended**, **Runs well**, **Slow on this PC** or **Too big**. One click downloads a model with progress, and installed models appear in the pickers.
 
-- **Text → 3D (AI writes Blender code).** An [Ollama](https://ollama.com) coding model (Qwen2.5-Coder or Qwen3.5, 1 GB to 19 GB) writes a Blender script that builds the object from primitives. The script passes an allow-list safety check before it runs in Blender, and errors are fed back for an automatic repair. **Edit with AI** lets you say "make the legs thicker" and the model rewrites its own script. This gives clean low-poly topology on any PC, even without a GPU.
+- **Templates (instant, no AI).** 22 parametric generators built into the app: chest, crate, barrel, table, chair, stool, bench, bookshelf, cabinet, lamp/lantern, sword, axe, shield, bottle/potion, mug, vase, candle, tree, rock, door, fence and goblet. Plain words set the parameters: *"a large dark walnut treasure chest with gold metal and 3 bands"*, *"2 m tall bookshelf with 6 shelves"*, *"blue kite shield"*, *"chest without a lock"*. It works on any PC in about 30 seconds, mostly baking time.
+- **Text → 3D (local LLM + templates).** An [Ollama](https://ollama.com) model (Qwen2.5-Coder or Qwen3.5, 1 GB to 19 GB) picks the template and fills in its settings as JSON. The app validates and clamps every value, so proportions stay sensible. When no template fits, the model writes a free-form Blender script instead. That script uses a modeling kit and passes an allow-list safety check, and any errors are fed back for an automatic repair. **Edit with AI** changes the settings ("wider, domed lid, only 2 bands") or rewrites the free-form script.
 - **Text → 3D (AI writes the mesh).** LLaMA-Mesh (NVIDIA) outputs the mesh directly. It's limited to under 500 faces and is non-commercial.
 - **Text → image.** Uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp), with no PyTorch needed:
   - **Z-Image-Turbo** and **FLUX.2 klein 4B** (Apache-2.0) run on 4 GB GPUs.
@@ -161,12 +162,14 @@ All of this was run on a laptop with an RTX 3050 Ti (4 GB VRAM), 16 GB RAM and a
 | **Offline:** text → Z-Image-Turbo → TripoSR → Blender | Good: recognisable textured teapot and chest, no keys | ~3 min |
 | **Offline:** Z-Image-Turbo image alone | Excellent product-shot quality | 1.5–4 min at 768 px |
 | **Offline:** TripoSR image → 3D alone | Rough but correct shape and texture, floaters removed | ~1 min |
-| **Offline:** Qwen3.5 4B → Blender script | Works, but rough: recognisable layout, poor proportions | ~2–2.5 min |
-| Qwen2.5-Coder 1.5B → Blender script | Fails often (writes prose instead of code); fixed the parser, still weak | ~1 min |
+| **Offline:** templates, instant (no AI) | Very good: clean, well-proportioned props; a batch of 12 from a .txt list with 0 failures | ~30 s each |
+| **Offline:** Qwen3.5 4B picks template + settings | Good: always a proper object; settings follow the description | ~45–75 s |
+| Edit with AI on template models | Correct: "flat lid with feet and 4 bands" and "wider, domed lid, 2 bands" both applied exactly | 35–45 s |
+| **Offline:** Qwen3.5 4B free-form Blender script (no template) | Works, but rough: recognisable layout, poor proportions | ~2 min |
 | Hunyuan3D-2mv (Hugging Face free) | Not verified: the free daily quota ran out | — |
 | Paid providers (fal, Tripo, Meshy, Rodin, Tencent, Replicate, Stability, OpenAI, Gemini, xAI, Together) and Cloudflare/Pollinations | Implemented from official docs; need a key to verify | — |
 
-**Honest take on local LLM modeling.** Small models (≤ 4B) can't reason well about 3D layout, so their results are blocky and badly proportioned. Use 7B+ models when your GPU allows, or use the offline image route (Z-Image + TripoSR), which gives far better shapes on the same PC.
+**Honest take on local LLM modeling.** Small models (≤ 4B) can't reason well about 3D layout, which is why MeshForge has them fill template settings instead of inventing geometry. For objects without a template, free-form scripts from small models stay rough. Use 7B+ models, or the offline image route (Z-Image + TripoSR), for those.
 
 ## License
 
