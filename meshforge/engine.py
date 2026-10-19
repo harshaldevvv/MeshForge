@@ -56,7 +56,7 @@ def refine(job_dir: Path, preset="game", target=None, texture=None, quads=False,
 
 
 def run_job(job: Job, out_root: Path, image_provider: str, backend: str, preset: str, view_names, seed, quads, log,
-            stage=lambda s: None):
+            stage=lambda s: None, edit=None):
     d = out_root / job.name
     (d / "views").mkdir(parents=True, exist_ok=True)
     preset = job.preset or preset
@@ -68,7 +68,8 @@ def run_job(job: Job, out_root: Path, image_provider: str, backend: str, preset:
         if Path(src).resolve() != dst.resolve():  # regenerate passes the job's own views
             shutil.copy(src, dst)
         views[v] = dst
-    if job.prompt and not views:
+    text_backend = providers.RECON_INFO.get(backend, {}).get("input") == "text"
+    if job.prompt and not views and not text_backend:
         stage("images")
         gen = providers.IMAGE_PROVIDERS[image_provider]
         for v in view_names:
@@ -79,14 +80,17 @@ def run_job(job: Job, out_root: Path, image_provider: str, backend: str, preset:
 
     stage("reconstructing")
     log(f"  [{job.name}] reconstructing from {sorted(views)} ({backend})")
-    providers.RECONSTRUCTORS[backend](views, d / "raw.glb", PRESETS[preset] | {"seed": seed})
+    if text_backend and not job.prompt:
+        raise RuntimeError(f"{backend} builds from a text description; this job has only images")
+    providers.RECONSTRUCTORS[backend](views, d / "raw.glb", PRESETS[preset] | {
+        "seed": seed, "prompt": job.prompt, "job_dir": str(d), "edit": edit})
 
     stage("refining")
     log(f"  [{job.name}] refining in Blender (preset {preset})")
     refine(d, preset, quads=quads, log=log)
 
     meta = dict(name=job.name, prompt=job.prompt, views={k: v.name for k, v in views.items()}, backend=backend,
-                image_provider=image_provider if job.prompt and not job.views else None, preset=preset, seed=seed,
+                image_provider=image_provider if job.prompt and not job.views and not text_backend else None, preset=preset, seed=seed,
                 quads=quads, seconds=round(time.time() - t0))
     (d / "job.json").write_text(json.dumps(meta, indent=2))
     return d

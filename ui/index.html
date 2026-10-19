@@ -91,6 +91,19 @@
   .key .kh { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
   .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #2a2f39; color: var(--dim); font-weight: 500; }
   .badge.ok { background: #173a2b; color: #8fe0b6; }
+  .kgroup h4 { margin: 18px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); }
+  .key ol { margin: 6px 0 0 18px; padding: 0; color: var(--dim); font-size: 12.5px; }
+  .badge.paid { background: #3a2f17; color: #f3cf7a; } .badge.rec { background: #1d3357; color: #a9c8ff; }
+  .badge.slow { background: #3a2f17; color: #f3cf7a; } .badge.no { background: #3a1a1c; color: #ffb3b5; }
+  .hw { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+  .hw span { background: #0f1115; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 12.5px; }
+  .lm { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+  .lm.dim { opacity: .55; }
+  .lm .t { font-weight: 600; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .lm .d { grid-column: 1; color: var(--dim); font-size: 12.5px; }
+  .lm .a { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 6px; align-items: center; }
+  .bar { grid-column: 1 / -1; height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #26324a; border: 1px solid var(--accent); padding: 9px 16px; border-radius: 9px; opacity: 0; transition: opacity .2s; pointer-events: none; }
   .toast.show { opacity: 1; }
   @media (max-width: 1100px) { .split { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } .grid { max-height: 260px; } .viewer { border-left: 0; border-top: 1px solid var(--line); } }
@@ -116,14 +129,15 @@
       <label for="prompt">What should we make?</label>
       <textarea id="prompt" placeholder="A weathered bronze knight helmet with a tall red horsehair plume, engraved floral patterns on the cheek guards, dents and scratches from battle…"></textarea>
       <div class="hint">More detail = better model: materials, colors, shape, style, wear.</div>
-      <label>Views to generate</label>
+      <div id="imgOpts"><label>Views to generate</label>
       <div class="seg" id="views">
         <button data-v="front" class="on">Front</button><button data-v="back">Back</button>
         <button data-v="left">Left</button><button data-v="right">Right</button>
       </div>
       <div class="hint">One front view works best with TRELLIS.2. Pick 3–4 views with a multi-view backend.</div>
       <label for="imgprov">Image generator</label>
-      <select id="imgprov"></select>
+      <select id="imgprov"></select></div>
+      <div class="hint" id="textMode" hidden>This backend builds the model straight from your description (no images).</div>
     </div>
 
     <div data-pane="images" hidden>
@@ -154,6 +168,7 @@
     <label for="backend">3D backend</label>
     <select id="backend"></select>
     <div class="hint" id="backendHint"></div>
+    <div class="hint" id="backendWarn" style="color:var(--warn)"></div>
 
     <label>Detail</label>
     <div class="seg" id="preset"></div>
@@ -165,6 +180,7 @@
 
     <div class="spacer"></div>
     <div class="foot">
+      <button id="localBtn">Local models (offline)</button>
       <button id="keysBtn">API keys</button>
       <button id="exportBtn">Export all…</button>
       <button id="openOut">Open output folder</button>
@@ -183,6 +199,7 @@
           <button data-ch="albedo">Albedo</button>
           <button data-ch="normal">Normal map</button>
           <button data-ch="roughness">Roughness</button>
+          <button data-ch="metallic">Metallic</button>
           <button data-ch="ao">AO</button>
           <button data-ch="clay">Clay</button>
           <button data-ch="uv">UV checker</button>
@@ -205,6 +222,10 @@
     <div id="keyList"></div>
   </div>
 </dialog>
+<dialog id="localDlg" style="width:min(900px,94vw)">
+  <div class="dlg-h"><h3>Local models (offline, free)</h3><button id="localClose" aria-label="Close">✕</button></div>
+  <div class="dlg-b" id="localBody"></div>
+</dialog>
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -224,17 +245,6 @@ const api = async (name, body = {}) => {
 const toast = msg => { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-const BACKEND_INFO = {
-  'hf-trellis2': 'Free (Hugging Face quota). One image, best open quality, PBR.',
-  'hf-hunyuan-mv': 'Free (HF quota). Uses front/back/left/right views. License excludes EU/UK/KR.',
-  'fal-trellis2': 'Paid via fal (~$0.25–0.35). One image, no daily limit.',
-  'fal-trellis-multi': 'Paid via fal (~$0.02). Several views.',
-  'fal-hunyuan-mv': 'Paid via fal (~$0.16). Needs front, back and left.',
-};
-const KEY_LINKS = { cloudflare: 'https://dash.cloudflare.com/profile/api-tokens', pollinations: 'https://enter.pollinations.ai/keys',
-  hf: 'https://huggingface.co/settings/tokens', fal: 'https://fal.ai/dashboard/keys' };
-const FREE = { cloudflare: true, pollinations: true, hf: true };
-
 let S = null, tab = 'text', preset = 'game', picked = [], selected = null, shownVersion = null;
 
 // ---------- form ----------
@@ -244,7 +254,31 @@ $$('.tabs button').forEach(b => b.onclick = () => {
   $$('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== tab);
 });
 $$('#views button').forEach(b => b.onclick = () => { b.classList.toggle('on'); if (!$$('#views .on').length) b.classList.add('on'); });
-$('#backend').onchange = () => $('#backendHint').textContent = BACKEND_INFO[$('#backend').value] || '';
+// ---------- pickers (grouped: local / free / paid, with what's missing) ----------
+const GROUPS = { local: 'Local · offline, free', free: 'Free online', paid: 'Your paid key' };
+function fillSelect(sel, items) {
+  const sig = JSON.stringify(items.map(i => [i.id, i.ready]));
+  if (sel.dataset.sig === sig) return;
+  const cur = sel.value; sel.dataset.sig = sig;
+  sel.innerHTML = Object.entries(GROUPS).map(([g, label]) => {
+    const its = items.filter(i => i.group === g);
+    return its.length ? `<optgroup label="${label}">${its.map(i => `<option value="${i.id}">${esc(i.label)}${
+      i.ready ? '' : i.local ? ' — not downloaded' : ' — add key'}</option>`).join('')}</optgroup>` : '';
+  }).join('');
+  if (cur && items.some(i => i.id === cur)) sel.value = cur;
+  else { const first = items.find(i => i.ready && i.group === 'free') || items.find(i => i.ready); if (first) sel.value = first.id; }
+}
+const info = (list, id) => (list || []).find(i => i.id === id) || {};
+function onBackend() {
+  const b = info(S?.backends, $('#backend').value), text = b.input === 'text';
+  $('#backendHint').textContent = b.note || '';
+  $('#backendWarn').textContent = b.ready === false ? (b.local ? 'Download this model in Local models first.' :
+    `Needs your ${S.key_info[b.key]?.name || b.key} key (API keys).`) : '';
+  $('#imgOpts').hidden = text; $('#textMode').hidden = !text;
+}
+$('#backend').onchange = onBackend;
+$('#imgprov').onchange = () => { const i = info(S.image_providers, $('#imgprov').value);
+  if (i.ready === false) toast(i.local ? 'Download this image model in Local models first' : `Add your ${S.key_info[i.key]?.name} key first`); };
 const renderChips = () => $('#imgChips').innerHTML = picked.map(p => `<span class="chip">${esc(p.split(/[\\/]/).pop())}</span>`).join('');
 $('#pickImgs').onclick = async () => { picked = await api('pick_images'); renderChips(); };
 $('#imgPaths').oninput = e => { picked = e.target.value.split(';').map(s => s.trim()).filter(Boolean); renderChips(); };
@@ -272,28 +306,83 @@ $('#go').onclick = async () => {
 
 // ---------- keys ----------
 function renderKeys() {
-  $('#keyList').innerHTML = Object.entries(S.key_help).map(([n, h]) => `
+  const sections = [['Image generators', k => k.uses.length === 1 && k.uses[0] === 'image'],
+                    ['3D model generators', k => k.uses.length === 1 && k.uses[0] === '3d'],
+                    ['Works for both images and 3D', k => k.uses.length > 1]];
+  $('#keyList').innerHTML = sections.map(([title, f]) => `<div class="kgroup"><h4>${title}</h4>${
+    Object.entries(S.key_info).filter(([, k]) => f(k)).map(([n, k]) => `
     <div class="key">
-      <div class="kh"><span>${n}${FREE[n] ? ' <span class="badge">free tier</span>' : ''}</span>
+      <div class="kh"><span>${esc(k.name)} ${k.free ? '<span class="badge ok">free tier</span>' : '<span class="badge paid">paid</span>'}</span>
         <span class="badge ${S.keys[n] ? 'ok' : ''}">${S.keys[n] ? 'saved' : 'not set'}</span></div>
-      <div class="hint">${esc(h)}</div>
+      <div class="hint">${k.free ? esc(k.free) + ' · ' : ''}${esc(k.price)}</div>
+      <ol>${k.steps.map(st => `<li>${esc(st)}</li>`).join('')}</ol>
       <div class="row" style="margin-top:8px">
-        <input type="password" data-key="${n}" placeholder="Paste ${n} key${n === 'cloudflare' ? ' as ACCOUNT_ID:TOKEN' : ''}" autocomplete="off">
+        <input type="password" data-key="${n}" placeholder="${esc(k.format)}" autocomplete="off">
         <button data-save="${n}">Save</button>
+        ${S.keys[n] ? `<button data-del="${n}">Remove</button>` : ''}
         <button data-link="${n}">Get key ↗</button>
       </div>
-    </div>`).join('');
+    </div>`).join('')}</div>`).join('');
 }
 $('#keysBtn').onclick = () => { renderKeys(); $('#keys').showModal(); };
 $('#keysClose').onclick = () => $('#keys').close();
 $('#keyList').onclick = async e => {
-  const save = e.target.dataset.save, link = e.target.dataset.link;
-  if (link) api('open_url', { url: KEY_LINKS[link] });
+  const { save, link, del } = e.target.dataset;
+  if (link) api('open_url', { url: S.key_info[link].url });
+  if (del) { await api('delete_key', { name: del }); toast('Key removed'); await refresh(); renderKeys(); }
   if (save) {
     const inp = $(`input[data-key="${save}"]`);
-    if (await api('set_key', { name: save, value: inp.value })) { inp.value = ''; toast(`${save} key saved`); await refresh(); renderKeys(); }
+    if (await api('set_key', { name: save, value: inp.value })) { inp.value = ''; toast(`${S.key_info[save].name} key saved`); await refresh(); renderKeys(); }
   }
 };
+
+// ---------- local models ----------
+let L = null, localTimer = null;
+const FIT = { good: ['rec', 'Runs well'], slow: ['slow', 'Slow on this PC'], no: ['no', 'Too big for this PC'] };
+const gb = n => n >= 1 ? n.toFixed(1) + ' GB' : Math.round(n * 1024) + ' MB';
+async function renderLocal() {
+  L = await api('local_status');
+  const h = L.hardware;
+  const ollama = L.ollama ? `<span class="badge ok">Ollama ${esc(L.ollama)} running</span>` :
+    L.ollama_installed ? '<span class="badge slow">Ollama installed, not running</span> <button data-ollama="start">Start</button>' :
+    '<span class="badge no">Ollama not installed</span> <button data-ollama="install">Install Ollama (free)</button> <button data-url="https://ollama.com/download">ollama.com ↗</button>';
+  $('#localBody').innerHTML = `
+    <p class="hint">Run models on this PC: no keys, no limits, works offline. Recommendations are based on your hardware.</p>
+    <div class="hw"><span>GPU: ${esc(h.gpu || 'none detected')}${h.vram ? ` · ${h.vram} GB VRAM` : ''}</span>
+      <span>RAM: ${h.ram} GB</span><span>CPU threads: ${h.cpus}</span><span>Free disk: ${h.disk_free} GB</span></div>
+    <div class="row" style="flex-wrap:wrap">${ollama}</div>
+    ${Object.entries(L.kinds).map(([kind, label]) => `<div class="kgroup"><h4>${label}</h4>${
+      L.models.filter(m => m.kind === kind).map(m => {
+        const pr = m.progress, busy = pr?.status === 'running', [cls, fitTxt] = FIT[m.fit];
+        const rec = L.recommended[kind] === m.id;
+        const pct = pr?.total ? Math.round(100 * pr.done / pr.total) : 0;
+        return `<div class="lm ${m.fit === 'no' && !m.installed ? 'dim' : ''}">
+          <div class="t">${esc(m.name)} ${rec ? '<span class="badge rec">★ Recommended for your PC</span>' : `<span class="badge ${cls}">${fitTxt}</span>`}
+            ${m.installed ? '<span class="badge ok">installed</span>' : ''}</div>
+          <div class="d">${gb(m.size)} · needs ${m.vram} GB VRAM${m.cpu ? ' (CPU ok)' : ''}, ${m.ram} GB RAM · ${esc(m.license)}<br>${esc(m.note)}
+            ${pr?.status === 'failed' ? `<div class="err" style="margin-top:6px">${esc(pr.error)}</div>` : ''}
+            ${busy ? `<div>${esc(pr.msg)} ${pr.total ? `${gb(pr.done / 2**30)} / ${gb(pr.total / 2**30)}` : ''}</div>` : ''}</div>
+          <div class="a">${busy ? `<span class="hint">${pct}%</span>` : m.installed ? `<button data-rm="${esc(m.id)}">Remove</button>` :
+            `<button class="${rec ? 'primary' : ''}" data-dl="${esc(m.id)}" ${m.fit === 'no' ? 'title="Probably too big for this PC"' : ''}>Download</button>`}</div>
+          ${busy ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}
+        </div>`; }).join('')}</div>`).join('')}
+    <p class="hint">Stored in ${esc(L.home)}. Ollama models live in Ollama's own folder.</p>`;
+}
+$('#localBtn').onclick = async () => { await renderLocal(); $('#localDlg').showModal();
+  clearInterval(localTimer); localTimer = setInterval(() => $('#localDlg').open ? renderLocal().catch(() => {}) : clearInterval(localTimer), 1500); };
+$('#localClose').onclick = () => { $('#localDlg').close(); refresh(); };
+$('#localBody').onclick = async e => {
+  const { dl, rm, ollama, url } = e.target.dataset;
+  if (url) api('open_url', { url });
+  if (dl) { const m = L.models.find(x => x.id === dl);
+    if (m.license.includes('NOT licensed') && !confirm(`${m.name}: ${m.license}. Download only if this license applies to you.`)) return;
+    await api('local_install', { id: dl }); toast('Download started'); }
+  if (rm && confirm('Remove this model from disk?')) { await api('local_remove', { id: rm }); toast('Removed'); }
+  if (ollama) { e.target.disabled = true; toast(ollama === 'install' ? 'Installing Ollama… (about a minute)' : 'Starting Ollama…');
+    await api('install_ollama'); }
+  renderLocal();
+};
+
 $('#exportBtn').onclick = async () => { const p = await api('export', { formats: [] }); if (p) toast('Exported to ' + p); };
 $('#openOut').onclick = () => api('open_folder', { name: '' });
 
@@ -350,6 +439,11 @@ function renderDetail(j) {
       ${j.prompt && j.image_provider ? `<button id="regenImg" ${['done', 'failed'].includes(j.status) ? '' : 'disabled'}>New images + regenerate</button>` : ''}
       <button id="openJob">Open folder</button>
     </div>
+    ${info(S.backends, j.backend).input === 'text' && ['done', 'failed'].includes(j.status) ? `
+    <div><label style="margin-top:0">Edit with AI</label><div class="row">
+      <input id="editTxt" placeholder="e.g. make the legs thicker, add a drawer, use darker wood">
+      <button id="editGo">Apply edit</button></div>
+      <div class="hint">The local model rewrites its own Blender script with your change.</div></div>` : ''}
     ${models.length ? `<div><label style="margin-top:0">Download</label><div class="files">${models.map(m =>
         `<a href="${base}${m}" download="${esc(j.name)}_${m}">${m.split('.').pop().toUpperCase()}</a>`).join('')}${maps.map(m =>
         `<a href="${base}${m}" download="${esc(j.name)}_${m}">${m}</a>`).join('')}</div></div>` : ''}
@@ -374,7 +468,11 @@ function wireDetail(j) {
   $('#regen') && ($('#regen').onclick = async () => { await api('regenerate', { name: j.name, opts: {} }); busyMsg(); refresh(); });
   $('#regenImg') && ($('#regenImg').onclick = async () => { await api('regenerate', { name: j.name, opts: { new_images: true } }); busyMsg(); refresh(); });
   $('#openJob').onclick = () => api('open_folder', { name: j.name });
-  $$('.map').forEach(m => m.onclick = () => setChannel({ 'diffuse.png': 'albedo', 'normal.png': 'normal', 'roughness.png': 'roughness', 'ao.png': 'ao' }[m.dataset.map] || 'lit'));
+  $('#editGo') && ($('#editGo').onclick = async () => {
+    const t = $('#editTxt').value.trim(); if (!t) return;
+    await api('regenerate', { name: j.name, opts: { edit: t } }); toast('Editing…'); refresh();
+  });
+  $$('.map').forEach(m => m.onclick = () => setChannel({ 'diffuse.png': 'albedo', 'normal.png': 'normal', 'roughness.png': 'roughness', 'metallic.png': 'metallic', 'ao.png': 'ao' }[m.dataset.map] || 'lit'));
 }
 
 // ---------- 3D viewer ----------
@@ -441,7 +539,7 @@ function loadModel(j) {
     scene.add(model);
     // baked maps for channel inspection (exact PNGs Blender wrote)
     mapTex = {};
-    const want = { albedo: 'diffuse.png', normal: 'normal.png', roughness: 'roughness.png', ao: 'ao.png' };
+    const want = { albedo: 'diffuse.png', normal: 'normal.png', roughness: 'roughness.png', metallic: 'metallic.png', ao: 'ao.png' };
     for (const [k, f] of Object.entries(want)) if (!showRaw && (j.files || []).includes(f)) {
       const t = texLoader.load(`${base}final/${f}?v=${j.version}`); t.flipY = false;
       t.colorSpace = k === 'albedo' ? THREE.SRGBColorSpace : THREE.NoColorSpace; mapTex[k] = t;
@@ -462,6 +560,7 @@ function applyChannel() {
       albedo: () => basic(mapTex.albedo || o.map),
       normal: () => basic(mapTex.normal),
       roughness: () => basic(mapTex.roughness),
+      metallic: () => basic(mapTex.metallic),
       ao: () => basic(mapTex.ao),
       clay: () => new THREE.MeshStandardMaterial({ color: 0xb9b2a8, roughness: 0.75 }),
       uv: () => basic(checker),
@@ -487,14 +586,13 @@ $('#raw').onclick = e => { showRaw = !showRaw; e.target.classList.toggle('on', s
 async function refresh() {
   S = await api('state');
   if (!$('#backend').options.length) {
-    $('#backend').innerHTML = S.backends.map(b => `<option>${b}</option>`).join(''); $('#backend').onchange();
-    $('#imgprov').innerHTML = S.image_providers.map(b => `<option>${b}</option>`).join('');
     $('#preset').innerHTML = Object.keys(S.presets).map(k => `<button data-p="${k}" class="${k === preset ? 'on' : ''}">${k}</button>`).join('');
     const ph = () => { const p = S.presets[preset]; $('#presetHint').textContent = `${p.target ? p.target.toLocaleString() + ' triangles' : 'keep every triangle'} · ${p.texture}px textures`; };
     $$('#preset button').forEach(b => b.onclick = () => { preset = b.dataset.p; $$('#preset button').forEach(x => x.classList.toggle('on', x === b)); ph(); });
     ph();
     if (!selected && S.jobs.length) selected = S.jobs[0].name;
   }
+  fillSelect($('#backend'), S.backends); fillSelect($('#imgprov'), S.image_providers); onBackend();
   render();
 }
 refresh();

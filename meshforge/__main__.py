@@ -40,7 +40,7 @@ def main(argv=None):
 
     k = sub.add_parser("key", help="store API keys in Windows Credential Manager")
     k.add_argument("action", choices=["set", "list"])
-    k.add_argument("name", nargs="?", choices=list(providers.KEY_HELP))
+    k.add_argument("name", nargs="?", choices=list(providers.KEYS))
 
     a = ap.parse_args(argv)
 
@@ -63,12 +63,12 @@ def main(argv=None):
         app.main(a.port, window=not a.browser)
     if a.cmd == "key":
         if a.action == "list":
-            for n, h in providers.KEY_HELP.items():
-                print(f"{n:13} {'set' if providers.get_key(n, required=False) else '---'}   {h}")
+            for n, k in providers.KEYS.items():
+                print(f"{n:13} {'set' if providers.get_key(n, required=False) else '---'}  {k['name']} ({'/'.join(k['uses'])}) {k['url']}")
         else:
             if not a.name:
                 sys.exit("meshforge key set <name>")
-            print(providers.KEY_HELP[a.name])
+            print(providers.KEYS[a.name]["url"])
             value = _ask_key(a.name)
             if not value:
                 sys.exit("nothing entered, key not changed")
@@ -84,7 +84,7 @@ def _ask_key(name):
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
-        v = simpledialog.askstring("MeshForge", f"Paste your {name} key (Ctrl+V):\n\n{providers.KEY_HELP[name]}",
+        v = simpledialog.askstring("MeshForge", f"Paste your {name} key (Ctrl+V):\n\n{providers.KEYS[name]['url']}",
                                    show="*", parent=root)
         root.destroy()
         return (v or "").strip()

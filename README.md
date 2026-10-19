@@ -26,22 +26,54 @@ python -m venv .venv
 .venv\Scripts\pip install -e .
 ```
 
-## API keys (free options)
+## Three ways to generate
 
-```
-meshforge key list           # shows every key, whether it's set, and how to get it
-meshforge key set hf         # free: raises the free GPU quota for 3D generation
-meshforge key set cloudflare # free: ~170 images/day, for text-to-3D
-```
-
-Keys are stored in Windows Credential Manager. Environment variables `MESHFORGE_<NAME>` override them.
-
-| Key | Used for | Cost | Get it |
+| | What you need | Cost | Best for |
 |---|---|---|---|
-| `hf` | 3D generation through free Hugging Face Spaces (TRELLIS.2, Hunyuan3D-2mv) | Free: 5 GPU-min/day (2 without a key) | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read |
-| `cloudflare` | Text → image (FLUX) | Free: 10,000 neurons/day | [dash.cloudflare.com](https://dash.cloudflare.com): copy the Account ID, then My Profile → API Tokens → "Workers AI" template. Store as `ACCOUNT_ID:TOKEN` |
-| `pollinations` | Text → image | Free grant | [enter.pollinations.ai/keys](https://enter.pollinations.ai/keys) |
-| `fal` | Paid 3D backends (no daily limit) | ~$0.02–0.35 per model | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) |
+| **Local (offline)** | Download models in the app (**Local models**) | Free, unlimited | Privacy, no keys, low-poly props, batch runs |
+| **Free online** | Optional free keys (Hugging Face, Cloudflare, Pollinations) | Free daily quotas | Best open quality (TRELLIS.2) at a few models a day |
+| **Your paid key** | Any key below | Pay per use | Volume and top commercial quality (Tripo, Meshy, Rodin…) |
+
+## Local models (offline)
+
+Open **Local models** in the app. It detects your GPU, VRAM, RAM and disk, then marks each model as **Recommended**, **Runs well**, **Slow on this PC** or **Too big**. One click downloads a model with progress, and installed models appear in the pickers.
+
+- **Text → 3D (AI writes Blender code).** An [Ollama](https://ollama.com) coding model (Qwen2.5-Coder or Qwen3.5, 1 GB to 19 GB) writes a Blender script that builds the object from primitives. The script passes an allow-list safety check before it runs in Blender, and errors are fed back for an automatic repair. **Edit with AI** lets you say "make the legs thicker" and the model rewrites its own script. This gives clean low-poly topology on any PC, even without a GPU.
+- **Text → 3D (AI writes the mesh).** LLaMA-Mesh (NVIDIA) outputs the mesh directly. It's limited to under 500 faces and is non-commercial.
+- **Text → image.** Uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp), with no PyTorch needed:
+  - **Z-Image-Turbo** and **FLUX.2 klein 4B** (Apache-2.0) run on 4 GB GPUs.
+  - **SD-Turbo** for weak PCs.
+  - **FLUX.1 schnell** for 6 GB+.
+  - Ollama itself can't generate images on Windows yet; see the [research](docs/research/05-local-models.md).
+- **Image → 3D.**
+  - **TripoSR** (MIT): GPU or CPU.
+  - **Hunyuan3D-2mini**: shape only, 6 GB+. Its license excludes the EU, UK and South Korea.
+
+Models are stored in `%LOCALAPPDATA%\MeshForge`; override with `MESHFORGE_HOME`.
+
+## API keys
+
+Add keys in the app (**API keys**: grouped into image, 3D, and both, each with step-by-step instructions and a link) or with `meshforge key set <name>`. Keys are stored only in Windows Credential Manager on your PC, never in files. `MESHFORGE_<NAME>` environment variables override them.
+
+| Key | Images | 3D | Free tier | Get it |
+|---|---|---|---|---|
+| `cloudflare` | FLUX.1 schnell | | 10,000 neurons/day (~170 images) | [dash.cloudflare.com](https://dash.cloudflare.com/?to=/:account/ai/workers-ai) |
+| `pollinations` | FLUX | | free pollen grant | [enter.pollinations.ai/keys](https://enter.pollinations.ai/keys) |
+| `hf` | FLUX.1 schnell (credits) | TRELLIS.2, Hunyuan3D-2mv Spaces | 5 GPU-min/day (~2 models) | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |
+| `gemini` | Nano Banana 2 | | none | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| `openai` | gpt-image-1-mini | | none | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `xai` | Grok Imagine | | none | [console.x.ai](https://console.x.ai) |
+| `together` | FLUX.2 [dev] | | none | [api.together.ai](https://api.together.ai/settings/projects/~current/api-keys) |
+| `fal` | FLUX schnell | TRELLIS.2, TRELLIS multi, Hunyuan multi-view | none | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys) |
+| `replicate` | FLUX schnell | TRELLIS | none | [replicate.com/account/api-tokens](https://replicate.com/account/api-tokens) |
+| `stability` | Stable Image Core | Stable Fast 3D, SPAR3D | a few signup credits | [platform.stability.ai](https://platform.stability.ai/account/keys) |
+| `tripo` | | Tripo v3.1 (single and multi-view) | first-key credits | [platform.tripo3d.ai](https://platform.tripo3d.ai) |
+| `meshy` | | Meshy 7.1 (single and multi-image) | none (paid plan) | [meshy.ai/developers/keys](https://www.meshy.ai/developers/keys) |
+| `rodin` | | Hyper3D Rodin Gen-2.5 | none (Business plan) | [hyper3d.ai](https://hyper3d.ai/workspace/api-dashboard) |
+| `tencent` | | Hunyuan 3D 3.1 | 200 credits | [Tencent Cloud CAM](https://console.tencentcloud.com/cam/capi) |
+| `custom` | any OpenAI-compatible `/images/generations` | | — | JSON `{"base_url", "model", "api_key"}` |
+
+Request formats were verified against each provider's docs ([specs](docs/research/04-provider-api-specs.md)). See [What has been tested](#what-has-been-tested) for which providers have run end to end. The rest are implemented from the docs and need a key to verify.
 
 ## Desktop app
 
@@ -117,6 +149,24 @@ blender -b --factory-startup -P blender/pipeline.py -- in.glb out/ 5000 2048 0
 - [Image/text-to-3D models, papers and math](docs/research/01-sota-models.md)
 - [Competitors, image APIs, hosted 3D](docs/research/02-competitors-and-apis.md)
 - [Blender 5.x headless pipeline and desktop stack](docs/research/03-blender-and-stack.md)
+
+## What has been tested
+
+All of this was run on a laptop with an RTX 3050 Ti (4 GB VRAM), 16 GB RAM and a Ryzen 5 5600H.
+
+| Route | Result | Time |
+|---|---|---|
+| Image → TRELLIS.2 (Hugging Face free) → Blender | Very good: pawn with wood-grain texture, 30k triangles | ~2.5 min |
+| Blender refine: low poly, quads, every format, maps | Works: 488k → 3,000 triangles with detail kept in the normal map; 75% quads in quad mode | 15–45 s |
+| **Offline:** text → Z-Image-Turbo → TripoSR → Blender | Good: recognisable textured teapot and chest, no keys | ~3 min |
+| **Offline:** Z-Image-Turbo image alone | Excellent product-shot quality | 1.5–4 min at 768 px |
+| **Offline:** TripoSR image → 3D alone | Rough but correct shape and texture, floaters removed | ~1 min |
+| **Offline:** Qwen3.5 4B → Blender script | Works, but rough: recognisable layout, poor proportions | ~2–2.5 min |
+| Qwen2.5-Coder 1.5B → Blender script | Fails often (writes prose instead of code); fixed the parser, still weak | ~1 min |
+| Hunyuan3D-2mv (Hugging Face free) | Not verified: the free daily quota ran out | — |
+| Paid providers (fal, Tripo, Meshy, Rodin, Tencent, Replicate, Stability, OpenAI, Gemini, xAI, Together) and Cloudflare/Pollinations | Implemented from official docs; need a key to verify | — |
+
+**Honest take on local LLM modeling.** Small models (≤ 4B) can't reason well about 3D layout, so their results are blocky and badly proportioned. Use 7B+ models when your GPU allows, or use the offline image route (Z-Image + TripoSR), which gives far better shapes on the same PC.
 
 ## License
 

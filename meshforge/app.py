@@ -17,7 +17,7 @@ from pathlib import Path
 
 import webview
 
-from . import engine, inputs, providers
+from . import engine, inputs, local, providers
 
 UI = Path(__file__).resolve().parent.parent / "ui"
 OUT = Path(os.environ.get("MESHFORGE_OUTPUT", Path.home() / "Documents" / "MeshForge"))
@@ -91,9 +91,9 @@ class Api:
             j["version"] = int(final.stat().st_mtime) if final.exists() else 0
         return {
             "jobs": sorted(jobs.values(), key=lambda j: -j.get("updated", j.get("started", 0))),
-            "keys": {n: bool(providers.get_key(n, required=False)) for n in providers.KEY_HELP},
-            "key_help": providers.KEY_HELP,
-            "backends": list(providers.RECONSTRUCTORS), "image_providers": list(providers.IMAGE_PROVIDERS),
+            "keys": {n: bool(providers.get_key(n, required=False)) for n in providers.KEYS},
+            "key_info": providers.KEYS,
+            "backends": self._choices(providers.RECON_INFO), "image_providers": self._choices(providers.IMAGE_INFO),
             "presets": engine.PRESETS, "output": str(OUT),
         }
 
@@ -137,7 +137,8 @@ class Api:
             try:
                 engine.run_job(job, OUT, opts.get("image_provider", "cloudflare"), opts.get("backend", "hf-trellis2"),
                                opts.get("preset", "game"), opts.get("views") or ["front"],
-                               random.randrange(2**31) if seed is None else seed, bool(opts.get("quads")), log, stage)
+                               random.randrange(2**31) if seed is None else seed, bool(opts.get("quads")), log, stage,
+                               edit=opts.get("edit"))
                 stage("done")
             except BaseException as e:  # SystemExit from a missing key must not kill the worker
                 with self.lock:
@@ -209,8 +210,39 @@ class Api:
         return True
 
     # ---------- misc ----------
+    @staticmethod
+    def _choices(info):
+        """Backend/image choices with availability: needs a key, needs a download, or ready."""
+        inst = local.installed()
+        out = []
+        for pid, i in info.items():
+            ready = inst.get(i["local"], False) if i.get("local") else (
+                not i.get("key") or i.get("free") or bool(providers.get_key(i["key"], required=False)))
+            group = "local" if i.get("local") else ("free" if i.get("free") else "paid")
+            out.append({"id": pid, **{k: v for k, v in i.items()}, "ready": ready, "group": group})
+        return out
+
+    # ---------- local models ----------
+    def local_status(self):
+        return local.status()
+
+    def local_install(self, id):
+        local.install(id)
+        return True
+
+    def local_remove(self, id):
+        local.remove(id)
+        return True
+
+    def install_ollama(self):
+        return local.install_ollama_app()
+
+    def delete_key(self, name):
+        providers.delete_key(name)
+        return True
+
     def set_key(self, name, value):
-        if name in providers.KEY_HELP and value.strip():
+        if name in providers.KEYS and value.strip():
             providers.set_key(name, value.strip())
             return True
         return False

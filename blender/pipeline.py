@@ -107,8 +107,9 @@ def main():
     nt = mat.node_tree
     bsdf = nt.nodes["Principled BSDF"]
 
-    def bake(kind, cs, **kw):
-        img = bpy.data.images.new(kind.lower(), res, res)
+    def bake(kind, cs, name=None, **kw):
+        name = name or kind.lower()
+        img = bpy.data.images.new(name, res, res)
         img.colorspace_settings.name = cs
         n = nt.nodes.new("ShaderNodeTexImage")
         n.image = img
@@ -120,12 +121,43 @@ def main():
         bpy.ops.object.bake(type=kind, use_selected_to_active=True, cage_extrusion=0.01 * diag,
                             max_ray_distance=0.03 * diag, margin=16, margin_type='EXTEND',
                             target='IMAGE_TEXTURES', save_mode='INTERNAL', **kw)
-        img.filepath_raw = os.path.join(out, f"{kind.lower()}.png")
+        img.filepath_raw = os.path.join(out, f"{name}.png")
         img.file_format = 'PNG'
         img.save()
         return n
 
-    nt.links.new(bake('DIFFUSE', 'sRGB', pass_filter={'COLOR'}).outputs[0], bsdf.inputs["Base Color"])
+    def bake_input(socket, name, cs):
+        """Bake any Principled BSDF input of the high-poly materials via an Emission pass.
+        (The DIFFUSE pass returns black for metallic surfaces, and glTF's default metallic is 1.0.)"""
+        saved = []
+        for slot in hi.material_slots:
+            m = slot.material
+            if not m or not m.node_tree:
+                continue
+            t = m.node_tree
+            p = next((x for x in t.nodes if x.type == 'BSDF_PRINCIPLED'), None)
+            outn = next((x for x in t.nodes if x.type == 'OUTPUT_MATERIAL' and x.is_active_output), None)
+            if not p or not outn:
+                continue
+            em = t.nodes.new("ShaderNodeEmission")
+            src = p.inputs[socket]
+            if src.is_linked:
+                t.links.new(src.links[0].from_socket, em.inputs["Color"])
+            else:
+                v = src.default_value
+                em.inputs["Color"].default_value = (*v[:3], 1) if hasattr(v, "__len__") else (v, v, v, 1)
+            prev = outn.inputs["Surface"].links[0].from_socket if outn.inputs["Surface"].is_linked else None
+            t.links.new(em.outputs[0], outn.inputs["Surface"])
+            saved.append((t, em, outn, prev))
+        n = bake('EMIT', cs, name=name)
+        for t, em, outn, prev in saved:
+            if prev:
+                t.links.new(prev, outn.inputs["Surface"])
+            t.nodes.remove(em)
+        return n
+
+    nt.links.new(bake_input("Base Color", "diffuse", 'sRGB').outputs[0], bsdf.inputs["Base Color"])
+    nt.links.new(bake_input("Metallic", "metallic", 'Non-Color').outputs[0], bsdf.inputs["Metallic"])
     nm = nt.nodes.new("ShaderNodeNormalMap")
     nt.links.new(bake('NORMAL', 'Non-Color', normal_space='TANGENT').outputs[0], nm.inputs["Color"])
     nt.links.new(nm.outputs[0], bsdf.inputs["Normal"])
