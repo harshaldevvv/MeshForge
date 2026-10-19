@@ -37,13 +37,23 @@ def find_blender() -> str:
     return exe
 
 
+def _is_text_job(job_dir: Path):
+    """Template/LLM models: their thin bases are intentional, so no ground-slab cleanup."""
+    try:
+        backend = json.loads((job_dir / "job.json").read_text()).get("backend", "")
+    except (OSError, ValueError):
+        return (job_dir / "model_script.py").exists()
+    return providers.RECON_INFO.get(backend, {}).get("input") == "text" or (job_dir / "model_script.py").exists()
+
+
 def refine(job_dir: Path, preset="game", target=None, texture=None, quads=False, log=print):
     """Blender stage only: raw.glb -> final/ (model in every format + texture maps)."""
     p = PRESETS[preset] | {k: v for k, v in dict(target=target, texture=texture).items() if v is not None}
     final = job_dir / "final"
     shutil.rmtree(final, ignore_errors=True)
     cmd = [find_blender(), "-b", "--factory-startup", "-P", str(PIPELINE), "--",
-           str(job_dir / "raw.glb"), str(final), str(p["target"]), str(p["texture"]), "1" if quads else "0"]
+           str(job_dir / "raw.glb"), str(final), str(p["target"]), str(p["texture"]), "1" if quads else "0",
+           "0" if _is_text_job(job_dir) else "1"]  # ground-slab cleanup only for AI image-to-3D
     with _blender_lock:
         r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     for line in r.stdout.splitlines():

@@ -11,6 +11,7 @@ import hmac
 import json
 import mimetypes
 import os
+import re
 import shutil
 import time
 import urllib.parse
@@ -82,6 +83,14 @@ KEYS = {
             "Create a Tencent Cloud international account and activate the Hunyuan (HY) 3D service.",
             "Open CAM → API Keys → 'Create Key'. The SecretKey is shown only once.",
             "Paste here as SECRET_ID:SECRET_KEY."]),
+    "modal": dict(name="Modal (your own cloud GPU)", uses=["3d"], free="$30 of free credit every month (~600+ TRELLIS.2 models)",
+        price="pay per second only while generating (L40S ≈ $0.03–0.05 per model); turns itself off when idle",
+        url="https://modal.com/settings/tokens", format="TOKEN_ID:TOKEN_SECRET  (ak-…:as-…)", steps=[
+            "Sign in at modal.com with the account you want to pay for MeshForge's GPU time.",
+            "Open Settings → API Tokens → 'New Token'.",
+            "Copy the Token ID (starts with ak-) and the Token Secret (starts with as-). The secret is shown only once.",
+            "Paste here as TOKEN_ID:TOKEN_SECRET. MeshForge keeps it separate from any Modal login you already have "
+            "on this PC (it never reads or changes ~/.modal.toml)."]),
     "custom": dict(name="Custom OpenAI-compatible images", uses=["image"], free=None,
         price="whatever your provider charges", url="https://platform.openai.com/docs/api-reference/images",
         format='{"base_url": "https://…/v1", "model": "…", "api_key": "…"}', steps=[
@@ -101,8 +110,21 @@ def get_key(name: str, required=True):
     return val
 
 
+def normalize_key(name: str, value: str) -> str:
+    """Accept keys the way providers show them, e.g. a whole `modal token set --token-id ak-… --token-secret as-…` line."""
+    value = value.strip()
+    if name == "modal":
+        tid = re.search(r"\bak-[A-Za-z0-9]+", value)
+        sec = re.search(r"\bas-[A-Za-z0-9]+", value)
+        if not (tid and sec):
+            raise ValueError("Modal needs both the Token ID (ak-…) and the Token Secret (as-…). "
+                             "Paste them together, or paste the whole 'modal token set …' line.")
+        return f"{tid.group(0)}:{sec.group(0)}"
+    return value
+
+
 def set_key(name: str, value: str):
-    keyring.set_password("meshforge", name, value)
+    keyring.set_password("meshforge", name, normalize_key(name, value))
 
 
 def delete_key(name: str):
@@ -501,3 +523,4 @@ RECON_INFO = {
 }
 
 from . import local  # noqa: E402,F401  registers offline backends into the dicts above
+from . import cloud  # noqa: E402,F401  registers your-own-cloud-GPU backends

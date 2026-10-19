@@ -55,6 +55,24 @@ Open **Local models** in the app. It detects your GPU, VRAM, RAM and disk, then 
 
 Models are stored in `%LOCALAPPDATA%\MeshForge`; override with `MESHFORGE_HOME`.
 
+## Your own cloud GPU (Modal)
+
+Run a bigger model than your PC can handle, on **your own** on-demand GPU. You pay per second only while it generates, and it turns itself off after 60 seconds idle.
+
+1. Create a free account at [modal.com](https://modal.com), which includes **$30 of credit every month**.
+2. In MeshForge, go to **API keys → Modal** and paste the token. You can paste the whole `modal token set --token-id ak-… --token-secret as-…` line. MeshForge keeps it in Windows Credential Manager and never reads or changes any other Modal login on your PC (`~/.modal.toml`).
+3. Click **Deploy Hunyuan3D-2.1 GPU**. The first build takes about 15–30 minutes; after that it's ready instantly.
+4. Pick **Hunyuan3D-2.1 PBR · your Modal GPU** as the backend.
+
+| | |
+|---|---|
+| Model | Hunyuan3D-2.1: shape plus **PBR texture** (Tencent licence: not for use in the EU, UK or South Korea) |
+| GPU | L40S 48 GB, about $0.000542 per second |
+| Cost | About $0.05–0.10 per model, so $30 of free credit covers a few hundred models a month |
+| **Spending guard** | Before every job, MeshForge checks this month's spend (from Modal's billing API, cross-checked with its own GPU-seconds log). It **refuses to start** if the next job would pass your limit (default $25, set in API keys → Modal) |
+
+The deployment code is in [`cloud/modal_hunyuan21.py`](cloud/modal_hunyuan21.py), so you can read exactly what runs on your account.
+
 ## API keys
 
 Add keys in the app (**API keys**: grouped into image, 3D, and both, each with step-by-step instructions and a link) or with `meshforge key set <name>`. Keys are stored only in Windows Credential Manager on your PC, never in files. `MESHFORGE_<NAME>` environment variables override them.

@@ -4,11 +4,69 @@
 import bpy, sys, os
 
 
+def remove_ground_plane(obj):
+    """AI image-to-3D sometimes turns the floor/shadow in the photo into a thin slab under the object.
+    Remove faces in the bottom 3% of the height that lie outside the 2D footprint of the body above (15-40%).
+    Real bases are thicker or inside the footprint and are kept."""
+    import bmesh
+    import numpy as np
+    me = obj.data
+    co = np.empty(len(me.vertices) * 3, np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    z0, h = co[:, 2].min(), np.ptp(co[:, 2])
+    band = co[(co[:, 2] > z0 + 0.15 * h) & (co[:, 2] < z0 + 0.4 * h)]
+    if not len(band) or h <= 0:
+        return
+    g = 64
+    vmin, span = co[:, :2].min(0), np.ptp(co[:, :2], axis=0).max() + 1e-9
+    cell = lambda p: np.clip(((p - vmin) / span * (g - 1)).astype(int), 0, g - 1)
+    occ = np.zeros((g, g), bool)
+    occ[tuple(cell(band[:, :2]).T)] = True
+    for _ in range(2):
+        occ = occ | np.roll(occ, 1, 0) | np.roll(occ, -1, 0) | np.roll(occ, 1, 1) | np.roll(occ, -1, 1)
+    ctr = np.empty(len(me.polygons) * 3, np.float32)
+    me.polygons.foreach_get("center", ctr)
+    ctr = ctr.reshape(-1, 3)
+    kill = np.nonzero((ctr[:, 2] < z0 + 0.03 * h) & ~occ[tuple(cell(ctr[:, :2]).T)])[0]
+    slab_extent = np.ptp(ctr[kill][:, :2], axis=0).max() if len(kill) else 0
+    if len(kill) < 0.003 * len(me.polygons) or slab_extent < 1.3 * np.ptp(band[:, :2], axis=0).max():
+        return
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.faces.ensure_lookup_table()
+    bmesh.ops.delete(bm, geom=[bm.faces[i] for i in kill], context='FACES')
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    bm.faces.index_update()
+    # drop leftover shards of the slab (small disconnected pieces)
+    seen, islands = set(), []
+    for f in bm.faces:
+        if f.index in seen:
+            continue
+        stack, isl = [f], []
+        seen.add(f.index)
+        while stack:
+            cur = stack.pop()
+            isl.append(cur)
+            for e in cur.edges:
+                for nf in e.link_faces:
+                    if nf.index not in seen:
+                        seen.add(nf.index)
+                        stack.append(nf)
+        islands.append(isl)
+    big = max(len(i) for i in islands)
+    bmesh.ops.delete(bm, geom=[f for i in islands if len(i) < 0.02 * big for f in i], context='FACES')
+    bm.to_mesh(me)
+    bm.free()
+    print(f"MESHFORGE_GROUND: removed {len(kill)} slab faces")
+
+
 def main():
     args = sys.argv[sys.argv.index("--") + 1:]
     src, out, target = os.path.abspath(args[0]), os.path.abspath(args[1]), int(args[2])  # relative paths break bake save + FBX embed
     res = int(args[3]) if len(args) > 3 else 2048
     quads = len(args) > 4 and args[4] == "1"
+    ground = len(args) <= 5 or args[5] == "1"  # AI models: strip floor/shadow slabs from the input photo
     os.makedirs(out, exist_ok=True)
     bpy.ops.wm.read_factory_settings(use_empty=True)
     sc = bpy.context.scene
@@ -67,6 +125,8 @@ def main():
     bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.mesh.normals_make_consistent(inside=False)
     bpy.ops.object.mode_set(mode='OBJECT')
+    if ground:
+        remove_ground_plane(hi)
 
     # low-poly copy, decimated to the target triangle count
     lo = hi.copy()

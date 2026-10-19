@@ -72,7 +72,10 @@ def main(argv=None):
             value = _ask_key(a.name)
             if not value:
                 sys.exit("nothing entered, key not changed")
-            providers.set_key(a.name, value)
+            try:
+                providers.set_key(a.name, value)
+            except ValueError as e:
+                sys.exit(str(e))
             print("saved")
 
 

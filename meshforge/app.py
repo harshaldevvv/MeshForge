@@ -17,7 +17,7 @@ from pathlib import Path
 
 import webview
 
-from . import engine, inputs, local, providers
+from . import cloud, engine, inputs, local, providers
 
 UI = Path(__file__).resolve().parent.parent / "ui"
 OUT = Path(os.environ.get("MESHFORGE_OUTPUT", Path.home() / "Documents" / "MeshForge"))
@@ -241,6 +241,34 @@ class Api:
     def local_remove(self, id):
         local.remove(id)
         return True
+
+    # ---------- your own cloud GPU (Modal) ----------
+    deploy_log = []
+    deploying = False
+
+    def cloud_status(self):
+        st = cloud.status()
+        return st | {"deploying": self.deploying, "log": self.deploy_log[-12:]}
+
+    def cloud_deploy(self):
+        if self.deploying:
+            return False
+        self.deploying, self.deploy_log = True, []
+
+        def work():
+            try:
+                cloud.deploy(log=self.deploy_log.append)
+                self.deploy_log.append("Deployed. The GPU starts only when you generate, and turns off after 60 s idle.")
+            except BaseException as e:
+                self.deploy_log.append(f"FAILED: {e}")
+            finally:
+                self.deploying = False
+        threading.Thread(target=work, daemon=True).start()
+        return True
+
+    def cloud_budget(self, dollars):
+        cloud.set_budget(dollars)
+        return cloud.settings()
 
     def install_ollama(self):
         return local.install_ollama_app()

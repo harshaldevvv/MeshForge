@@ -324,7 +324,21 @@ function renderKeys() {
         ${S.keys[n] ? `<button data-del="${n}">Remove</button>` : ''}
         <button data-link="${n}">Get key ↗</button>
       </div>
+      ${n === 'modal' ? '<div id="cloudBox" class="hint" style="margin-top:8px">Checking cloud status…</div>' : ''}
     </div>`).join('')}</div>`).join('');
+  if (S.keys.modal) renderCloud();
+}
+async function renderCloud() {
+  const box = $('#cloudBox'); if (!box) return;
+  const c = await api('cloud_status');
+  const pct = Math.min(100, Math.round(100 * c.spent / Math.max(c.budget, 0.01)));
+  box.innerHTML = `<div><b>This month: $${c.spent.toFixed(2)} of $${c.budget.toFixed(2)}</b> <span class="hint">(Modal billing ${c.modal_reported == null ? 'unavailable' : '$' + c.modal_reported.toFixed(2)}; local estimate $${c.local_estimate.toFixed(2)})</span></div>
+    <div class="bar" style="margin:6px 0"><i style="width:${pct}%;background:${pct > 85 ? 'var(--bad)' : 'var(--accent)'}"></i></div>
+    <div class="row">Monthly limit $<input id="budget" type="number" min="0" step="1" value="${c.budget}" style="width:80px"> <button id="budgetSave">Set limit</button> <button id="cloudDeploy" ${c.deploying ? 'disabled' : ''}>${c.deployed ? 'Redeploy' : 'Deploy Hunyuan3D-2.1 GPU'}</button> <span>${c.deployed ? '✅ deployed' : c.deploying ? '⏳ deploying…' : 'not deployed'}</span></div>
+    ${c.log.length ? `<pre class="log">${esc(c.log.join('\n'))}</pre>` : ''}`;
+  $('#budgetSave').onclick = async () => { await api('cloud_budget', { dollars: Number($('#budget').value) }); toast('Limit saved'); renderCloud(); };
+  $('#cloudDeploy').onclick = async () => { await api('cloud_deploy'); toast('Deploying (first build ~15–30 min)'); renderCloud(); };
+  if (c.deploying) setTimeout(() => $('#keys').open && renderCloud(), 4000);
 }
 $('#keysBtn').onclick = () => { renderKeys(); $('#keys').showModal(); };
 $('#keysClose').onclick = () => $('#keys').close();
