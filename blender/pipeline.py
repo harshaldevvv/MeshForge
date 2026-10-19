@@ -46,8 +46,15 @@ def main():
     diag = max(hi.dimensions.length, 1e-6)
     if not any(s.material for s in hi.material_slots):  # shape-only models (Hunyuan3D) come without a material
         clay = bpy.data.materials.new("clay")
-        clay.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.8, 0.8, 0.8, 1)
-        clay.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value = 0.0
+        pb = clay.node_tree.nodes["Principled BSDF"]
+        pb.inputs["Base Color"].default_value = (0.8, 0.8, 0.8, 1)
+        pb.inputs["Metallic"].default_value = 0.0
+        pb.inputs["Roughness"].default_value = 0.6
+        if hi.data.color_attributes:  # multi-view projected colours (meshforge/projection.py)
+            vc = clay.node_tree.nodes.new("ShaderNodeVertexColor")
+            vc.layer_name = hi.data.color_attributes[0].name
+            clay.node_tree.links.new(vc.outputs["Color"], pb.inputs["Base Color"])
+            print("MESHFORGE_MAP: vertex colours")
         hi.data.materials.clear()
         hi.data.materials.append(clay)
 

@@ -8,49 +8,15 @@ import numpy as np
 import torch
 from PIL import Image
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cutout import cutout  # noqa: E402
+from projection import project  # noqa: E402
+
 mid, img_path, out, home = sys.argv[1], sys.argv[2], sys.argv[3], Path(sys.argv[4])
 VIEWS = dict(a.split("=", 1) for a in sys.argv[5:])  # extra views: front=... left=... back=... right=...
 device = "cuda" if torch.cuda.is_available() else "cpu"
 T0 = time.time()
 log = lambda m: print(f"[{time.time() - T0:6.1f}s] {m}", file=sys.stderr, flush=True)
-
-
-def cutout(img):
-    """RGBA with background removed. Plain backgrounds (what our image prompts ask for) use a fast
-    border flood-fill; busy ones fall back to rembg (slow on CPU)."""
-    from PIL import ImageDraw
-    img = Image.open(img).convert("RGBA")
-    a = np.asarray(img)
-    if a[..., 3].min() < 250:
-        return img
-    rgb = a[..., :3].astype(np.int16)
-    border = np.concatenate([rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]])
-    if border.std(axis=0).max() < 12:  # uniform background
-        mask = Image.new("L", img.size, 255)
-        work = img.convert("RGB")
-        w, h = img.size
-        for seed in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1), (w // 2, 0), (w // 2, h - 1), (0, h // 2), (w - 1, h // 2)]:
-            ImageDraw.floodfill(work, seed, (255, 0, 255), thresh=28)
-        bg = np.all(np.asarray(work) == (255, 0, 255), axis=-1)
-        # second pass: soft grey cast shadows touching the background (low saturation, not dark like metal)
-        f = a[..., :3].astype(np.float32)
-        sat = (f.max(-1) - f.min(-1)) / np.maximum(f.max(-1), 1)
-        shadowish = (sat < 0.12) & (f.mean(-1) > 120)
-        work2 = Image.fromarray(np.where((bg | ~shadowish)[..., None], np.where(bg[..., None], 255, 0), 128).astype(np.uint8)[..., 0])
-        for y in range(0, h, 4):  # grow background into connected shadow pixels
-            for x in (0, w - 1):
-                if work2.getpixel((x, y)) == 255:
-                    ImageDraw.floodfill(work2, (x, y), 254, thresh=130)
-        for x in range(0, w, 4):
-            for y in (0, h - 1):
-                if work2.getpixel((x, y)) == 255:
-                    ImageDraw.floodfill(work2, (x, y), 254, thresh=130)
-        bg |= np.asarray(work2) == 254
-        out = a.copy()
-        out[bg, 3] = 0
-        return Image.fromarray(out)
-    import rembg
-    return rembg.remove(img.convert("RGB"), session=rembg.new_session())
 
 
 if mid == "triposr":
@@ -83,7 +49,8 @@ if mid == "triposr":
     res = 256 if device == "cuda" else 192
     try:  # proper UV texture (needs OpenGL via moderngl)
         from tsr.bake_texture import bake_texture
-        mesh = model.extract_mesh(codes, False, resolution=res)[0]
+        multi = len(VIEWS) > 1  # extra views: colour by projection instead of TripoSR's own (front-only) texture
+        mesh = model.extract_mesh(codes, multi, resolution=res)[0]
         parts = mesh.split(only_watertight=False)  # drop floaters (before UV seams exist)
         if len(parts) > 1:
             big = max(len(q.faces) for q in parts)
@@ -118,17 +85,27 @@ if mid == "triposr":
                 big = max(len(q.faces) for q in parts)
                 mesh = trimesh.util.concatenate([q for q in parts if len(q.faces) >= 0.02 * big])
                 log(f"removed shadow skirt ({int(skirt.sum())} faces)")
+        if multi:
+            raise StopIteration  # skip the UV bake; projection below colours the vertices
         b = bake_texture(mesh, model, codes[0], 1024)  # Blender re-bakes at the chosen size
         tex = Image.fromarray((b["colors"] * 255).astype(np.uint8)).transpose(Image.FLIP_TOP_BOTTOM)
         tm = trimesh.Trimesh(mesh.vertices[b["vmapping"]], b["indices"], process=False,
                              visual=trimesh.visual.TextureVisuals(uv=b["uvs"], material=trimesh.visual.material.PBRMaterial(
                                  baseColorTexture=tex, metallicFactor=0.0, roughnessFactor=0.7)))  # glTF default metallic is 1.0
+    except StopIteration:
+        tm = mesh
     except Exception as e:  # fall back to vertex colours
         print(f"texture bake unavailable ({e}); using vertex colours", file=sys.stderr)
         tm = model.extract_mesh(codes, True, resolution=res)[0]
     log("mesh + texture done")
     from tsr.utils import to_gradio_3d_orientation  # TripoSR's own fix: its native axes are not glTF Y-up
-    to_gradio_3d_orientation(tm).export(out)
+    tm = to_gradio_3d_orientation(tm)
+    if len(VIEWS) > 1:
+        base = tm.visual.vertex_colors[:, :3] / 255.0 if hasattr(tm.visual, "vertex_colors") else None
+        from projection import _linear
+        tm, cov = project(tm, {v: cutout(p) for v, p in VIEWS.items()}, base=None if base is None else _linear(base))
+        log(f"projected {list(VIEWS)} ({cov:.0%} of vertices seen)")
+    tm.export(out)
 
 elif mid == "hunyuan3d-2mv":
     from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
@@ -144,6 +121,8 @@ elif mid == "hunyuan3d-2mv":
     mesh = pipe(image=imgs, num_inference_steps=5, octree_resolution=320, num_chunks=4000,
                 generator=torch.manual_seed(1234), output_type="trimesh")[0]
     log(f"generated {len(mesh.faces)} faces")
+    mesh, cov = project(mesh, imgs)  # shape-only model: colour it from the input views
+    log(f"projected {list(imgs)} ({cov:.0%} of vertices seen)")
     mesh.export(out)
 
 elif mid == "hunyuan3d-2mini":

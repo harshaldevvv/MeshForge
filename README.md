@@ -48,7 +48,8 @@ Open **Local models** in the app. It detects your GPU, VRAM, RAM and disk, then 
   - Ollama itself can't generate images on Windows yet; see the [research](docs/research/05-local-models.md).
 - **Image → 3D.**
   - **TripoSR** (MIT): GPU or CPU.
-  - **Hunyuan3D-2mv**: multi-view (front/left/back/right), crisp shapes, shape only. Works on 4 GB GPUs with 16 GB RAM (slow).
+  - **Hunyuan3D-2mv**: multi-view (front/left/back/right), crisp shapes. Works on 4 GB GPUs with 16 GB RAM (slow, ~5.5 min).
+  - **Multi-view texture projection** gives these models real colour from your images. Each view is aligned to the mesh by its silhouette, and every vertex takes colour from the cameras that can see it (a per-view depth buffer handles hidden parts), weighted by how squarely it faces them. Hidden spots copy the nearest coloured neighbour. Blender then bakes the colours onto the low-poly texture. It's always on for Hunyuan3D-2mv. TripoSR uses it when you give it more than one view; with one view it keeps its own texture. Name your files `object_front.png`, `object_left.png`, `object_back.png`, `object_right.png`.
   - **Hunyuan3D-2mini**: single image, shape only, 6 GB+.
   - Both Hunyuan models are under the Tencent license, which excludes the EU, UK and South Korea.
 
@@ -163,7 +164,8 @@ All of this was run on a laptop with an RTX 3050 Ti (4 GB VRAM), 16 GB RAM and a
 | Blender refine: low poly, quads, every format, maps | Works: 488k → 3,000 triangles with detail kept in the normal map; 75% quads in quad mode | 15–45 s |
 | **Offline:** text → Z-Image-Turbo → TripoSR → Blender | Good: recognisable textured teapot and chest, no keys | ~3 min |
 | **Offline:** Z-Image-Turbo image alone | Excellent product-shot quality | 1.5–4 min at 768 px |
-| **Offline:** Hunyuan3D-2mv, 4 views → 3D | Very good shape: crisp mug with a clean handle; shape only (no texture). Runs on a 4 GB GPU because the driver spills into system RAM (peak ~5 GB) | ~5.5 min |
+| **Offline:** Hunyuan3D-2mv + texture projection, 4 views → 3D | Very good: crisp mug with a clean handle, coloured from the photos (some photo highlights baked in). Runs on a 4 GB GPU because the driver spills into system RAM (peak ~5 GB) | ~6 min |
+| TripoSR + texture projection, 4 views | Colours correct from every side, but TripoSR's single-image shape of the mug was distorted. Use Hunyuan3D-2mv for multi-view | ~1 min |
 | **Offline:** TripoSR image → 3D alone | Rough but correct shape and texture, floaters removed | ~1 min |
 | **Offline:** templates, instant (no AI) | Very good: clean, well-proportioned props; a batch of 12 from a .txt list with 0 failures | ~30 s each |
 | **Offline:** Qwen3.5 4B picks template + settings | Good: always a proper object; settings follow the description | ~45–75 s |
