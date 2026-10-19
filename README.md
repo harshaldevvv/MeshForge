@@ -166,6 +166,8 @@ All of this was run on a laptop with an RTX 3050 Ti (4 GB VRAM), 16 GB RAM and a
 | **Offline:** Qwen3.5 4B picks template + settings | Good: always a proper object; settings follow the description | ~45–75 s |
 | Edit with AI on template models | Correct: "flat lid with feet and 4 bands" and "wider, domed lid, 2 bands" both applied exactly | 35–45 s |
 | **Offline:** Qwen3.5 4B free-form Blender script (no template) | Works, but rough: recognisable layout, poor proportions | ~2 min |
+| Glass and glowing parts (lantern, candle, lamp) | Kept: transparency goes into the diffuse alpha channel and glow into an emission map, so GLB exports have alphaMode BLEND and an emissive texture | — |
+| Shadow cleanup for image-to-3D (TripoSR) | Removes the flat shadow "skirt" that soft floor shadows create (11k faces on the teapot); a small patch right under the object can remain | — |
 | Hunyuan3D-2mv (Hugging Face free) | Not verified: the free daily quota ran out | — |
 | Paid providers (fal, Tripo, Meshy, Rodin, Tencent, Replicate, Stability, OpenAI, Gemini, xAI, Together) and Cloudflare/Pollinations | Implemented from official docs; need a key to verify | — |
 

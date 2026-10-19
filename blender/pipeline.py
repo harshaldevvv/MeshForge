@@ -126,6 +126,8 @@ def main():
         img.save()
         return n
 
+    emit_max = [1.0]
+
     def bake_input(socket, name, cs):
         """Bake any Principled BSDF input of the high-poly materials via an Emission pass.
         (The DIFFUSE pass returns black for metallic surfaces, and glTF's default metallic is 1.0.)"""
@@ -141,7 +143,11 @@ def main():
                 continue
             em = t.nodes.new("ShaderNodeEmission")
             src = p.inputs[socket]
-            if src.is_linked:
+            strength = p.inputs["Emission Strength"]
+            if socket == "Emission Color" and not src.is_linked and not strength.is_linked:
+                f = strength.default_value / emit_max[0]  # relative glow; non-glowing parts stay black
+                em.inputs["Color"].default_value = (*(c * f for c in src.default_value[:3]), 1)
+            elif src.is_linked:
                 t.links.new(src.links[0].from_socket, em.inputs["Color"])
             else:
                 v = src.default_value
@@ -156,8 +162,32 @@ def main():
             t.nodes.remove(em)
         return n
 
-    nt.links.new(bake_input("Base Color", "diffuse", 'sRGB').outputs[0], bsdf.inputs["Base Color"])
+    dn = bake_input("Base Color", "diffuse", 'sRGB')
+    nt.links.new(dn.outputs[0], bsdf.inputs["Base Color"])
     nt.links.new(bake_input("Metallic", "metallic", 'Non-Color').outputs[0], bsdf.inputs["Metallic"])
+
+    # glass and glowing parts would otherwise be flattened into opaque, unlit colour
+    import numpy as np
+    pbs = [next((x for x in s.material.node_tree.nodes if x.type == 'BSDF_PRINCIPLED'), None)
+           for s in hi.material_slots if s.material and s.material.node_tree]
+    pbs = [p for p in pbs if p]
+    if any(p.inputs["Alpha"].is_linked or p.inputs["Alpha"].default_value < 0.999 for p in pbs):
+        an = bake_input("Alpha", "alpha", 'Non-Color')
+        px = lambda im: (lambda a: (im.pixels.foreach_get(a), a)[1])(np.empty(len(im.pixels), np.float32))
+        d, a = px(dn.image), px(an.image)
+        d[3::4] = a[0::4]  # alpha into the diffuse PNG's alpha channel (what glTF expects)
+        dn.image.alpha_mode = 'STRAIGHT'
+        dn.image.pixels.foreach_set(d)
+        dn.image.save()
+        nt.links.new(dn.outputs["Alpha"], bsdf.inputs["Alpha"])
+        mat.surface_render_method = 'BLENDED'
+        print("MESHFORGE_MAP: alpha")
+    glow = max([p.inputs["Emission Strength"].default_value for p in pbs if not p.inputs["Emission Strength"].is_linked] or [0])
+    if glow > 0:
+        emit_max[0] = glow
+        nt.links.new(bake_input("Emission Color", "emission", 'sRGB').outputs[0], bsdf.inputs["Emission Color"])
+        bsdf.inputs["Emission Strength"].default_value = glow
+        print("MESHFORGE_MAP: emission")
     nm = nt.nodes.new("ShaderNodeNormalMap")
     nt.links.new(bake('NORMAL', 'Non-Color', normal_space='TANGENT').outputs[0], nm.inputs["Color"])
     nt.links.new(nm.outputs[0], bsdf.inputs["Normal"])

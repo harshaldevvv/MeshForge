@@ -88,6 +88,35 @@ if mid == "triposr":
             big = max(len(q.faces) for q in parts)
             mesh = trimesh.util.concatenate([q for q in parts if len(q.faces) >= 0.02 * big])
         log(f"mesh extracted ({len(parts)} pieces -> kept main)")
+        # cast shadows in the input image become a thin flat skirt at the base (TripoSR's native up is +z):
+        # drop bottom-layer faces that lie outside the footprint of the object just above them
+        v, f = mesh.vertices, mesh.faces
+        z0, h = v[:, 2].min(), np.ptp(v[:, 2])
+        band = v[(v[:, 2] > z0 + 0.14 * h) & (v[:, 2] < z0 + 0.35 * h)]
+        if len(band):
+            lo_xy, hi_xy = band[:, :2].min(0), band[:, :2].max(0)
+            ext = (hi_xy - lo_xy).max()
+            fz = v[f][:, :, 2].max(1)
+            fxy = v[f][:, :, :2].mean(1)
+            # footprint = 2D occupancy grid of the body just above the base, padded by 2 cells
+            g = 64
+            vmin, span = v[:, :2].min(0), np.ptp(v[:, :2], axis=0).max() + 1e-6
+            cell = lambda p: np.clip(((p - vmin) / span * (g - 1)).astype(int), 0, g - 1)
+            occ = np.zeros((g, g), bool)
+            occ[tuple(cell(band[:, :2]).T)] = True
+            for _ in range(2):
+                occ = occ | np.roll(occ, 1, 0) | np.roll(occ, -1, 0) | np.roll(occ, 1, 1) | np.roll(occ, -1, 1)
+            outside = ~occ[tuple(cell(fxy).T)]
+            skirt = (fz < z0 + 0.12 * h) & outside
+            # a cast shadow spills to one side; a real flared base (lamp, candlestick) spreads evenly
+            lopsided = skirt.any() and np.linalg.norm(fxy[skirt].mean(0) - (lo_xy + hi_xy) / 2) > 0.3 * ext
+            if skirt.sum() > 0.002 * len(f) and lopsided:
+                mesh.update_faces(~skirt)
+                mesh.remove_unreferenced_vertices()
+                parts = mesh.split(only_watertight=False)  # leftover shards of the cut sheet
+                big = max(len(q.faces) for q in parts)
+                mesh = trimesh.util.concatenate([q for q in parts if len(q.faces) >= 0.02 * big])
+                log(f"removed shadow skirt ({int(skirt.sum())} faces)")
         b = bake_texture(mesh, model, codes[0], 1024)  # Blender re-bakes at the chosen size
         tex = Image.fromarray((b["colors"] * 255).astype(np.uint8)).transpose(Image.FLIP_TOP_BOTTOM)
         tm = trimesh.Trimesh(mesh.vertices[b["vmapping"]], b["indices"], process=False,

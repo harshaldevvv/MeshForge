@@ -201,6 +201,7 @@
           <button data-ch="normal">Normal map</button>
           <button data-ch="roughness">Roughness</button>
           <button data-ch="metallic">Metallic</button>
+          <button data-ch="emission">Emission</button>
           <button data-ch="ao">AO</button>
           <button data-ch="clay">Clay</button>
           <button data-ch="uv">UV checker</button>
@@ -474,7 +475,7 @@ function wireDetail(j) {
     const t = $('#editTxt').value.trim(); if (!t) return;
     await api('regenerate', { name: j.name, opts: { edit: t } }); toast('Editing…'); refresh();
   });
-  $$('.map').forEach(m => m.onclick = () => setChannel({ 'diffuse.png': 'albedo', 'normal.png': 'normal', 'roughness.png': 'roughness', 'metallic.png': 'metallic', 'ao.png': 'ao' }[m.dataset.map] || 'lit'));
+  $$('.map').forEach(m => m.onclick = () => setChannel({ 'diffuse.png': 'albedo', 'normal.png': 'normal', 'roughness.png': 'roughness', 'metallic.png': 'metallic', 'emission.png': 'emission', 'ao.png': 'ao' }[m.dataset.map] || 'lit'));
 }
 
 // ---------- 3D viewer ----------
@@ -541,10 +542,10 @@ function loadModel(j) {
     scene.add(model);
     // baked maps for channel inspection (exact PNGs Blender wrote)
     mapTex = {};
-    const want = { albedo: 'diffuse.png', normal: 'normal.png', roughness: 'roughness.png', metallic: 'metallic.png', ao: 'ao.png' };
+    const want = { albedo: 'diffuse.png', normal: 'normal.png', roughness: 'roughness.png', metallic: 'metallic.png', emission: 'emission.png', ao: 'ao.png' };
     for (const [k, f] of Object.entries(want)) if (!showRaw && (j.files || []).includes(f)) {
       const t = texLoader.load(`${base}final/${f}?v=${j.version}`); t.flipY = false;
-      t.colorSpace = k === 'albedo' ? THREE.SRGBColorSpace : THREE.NoColorSpace; mapTex[k] = t;
+      t.colorSpace = k === 'albedo' || k === 'emission' ? THREE.SRGBColorSpace : THREE.NoColorSpace; mapTex[k] = t;
     }
     if (mapTex.ao) meshes.forEach(m => { const o = originals.get(m); if (o.isMeshStandardMaterial) { o.aoMap = mapTex.ao; o.needsUpdate = true; } });
     $('#stats').textContent = `${showRaw ? 'RAW · ' : ''}${Math.round(tris).toLocaleString()} triangles · ${verts.toLocaleString()} vertices`;
@@ -563,6 +564,7 @@ function applyChannel() {
       normal: () => basic(mapTex.normal),
       roughness: () => basic(mapTex.roughness),
       metallic: () => basic(mapTex.metallic),
+      emission: () => basic(mapTex.emission),
       ao: () => basic(mapTex.ao),
       clay: () => new THREE.MeshStandardMaterial({ color: 0xb9b2a8, roughness: 0.75 }),
       uv: () => basic(checker),
